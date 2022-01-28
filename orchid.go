@@ -30,9 +30,9 @@ func Init(module_name string) {
 	module = module_name
 }
 
-func (l *logMessage) createLogMessage(severity string, text string, a ...interface{}) {
+func (l *logMessage) createLogMessage(severity string, a ...interface{}) {
 	l.Time = time.Now()
-	l.Text = fmt.Sprintf(text, a...)
+	l.Text = fmt.Sprint(a...)
 	l.Severity = severity
 }
 
@@ -66,38 +66,38 @@ func (l *logMessage) printLogMessage() {
 	}
 }
 
-func Info(message string, a ...interface{}) {
+func Info(a ...interface{}) {
 	var l logMessage
-	l.createLogMessage("INFO", message, a...)
+	l.createLogMessage("INFO", a...)
 	l.printLogMessage()
 }
 
-func OK(message string, a ...interface{}) {
+func OK(a ...interface{}) {
 	var l logMessage
-	l.createLogMessage("OK", message, a...)
+	l.createLogMessage("OK", a...)
 	l.printLogMessage()
 }
 
-func Error(message string, a ...interface{}) {
+func Error(a ...interface{}) {
 	var l logMessage
-	l.createLogMessage("ERROR", message, a...)
+	l.createLogMessage("ERROR", a...)
 	l.printLogMessage()
 }
 
-func Fatal(message string, a ...interface{}) {
+func Fatal(a ...interface{}) {
 	var l logMessage
-	l.createLogMessage("FATAL", message, a...)
+	l.createLogMessage("FATAL", a...)
 	l.printLogMessage()
 }
 
-func Warn(message string, a ...interface{}) {
+func Warn(a ...interface{}) {
 	var l logMessage
-	l.createLogMessage("WARN", message, a...)
+	l.createLogMessage("WARN", a...)
 	l.printLogMessage()
 }
 
-func Debug(message string, a ...interface{}) {
+func Debug(a ...interface{}) {
 	var l logMessage
-	l.createLogMessage("DEBUG", message, a...)
+	l.createLogMessage("DEBUG", a...)
 	l.printLogMessage()
 }
