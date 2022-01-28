@@ -2,6 +2,7 @@ package orchid
 
 import (
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -13,6 +14,7 @@ const (
 	COLOR_OK    = "\033[48;5;36m"
 	COLOR_WARN  = "\033[48;5;3m"
 	COLOR_ERROR = "\033[48;5;1m"
+	COLOR_FATAL = "\033[48;5;1m"
 	COLOR_DEBUG = "\033[48;5;5m"
 )
 
@@ -35,7 +37,7 @@ func (l *logMessage) createLogMessage(severity string, text string, a ...interfa
 }
 
 func (l *logMessage) printLogMessage() {
-	metadata := fmt.Sprintf("%s %-20s %-6s", l.Time.Format(time.RFC822), module, l.Severity)
+	metadata := fmt.Sprintf("%-20s %-6s", module, l.Severity)
 	color := COLOR_INFO
 	switch l.Severity {
 	case "INFO":
@@ -50,11 +52,18 @@ func (l *logMessage) printLogMessage() {
 	case "ERROR":
 		color = COLOR_ERROR
 		break
+	case "FATAL":
+		color = COLOR_FATAL
+		break
 	case "DEBUG":
 		color = COLOR_DEBUG
 		break
 	}
-	fmt.Println(string(COLOR_RESET), string(color), metadata, string(COLOR_RESET), l.Text)
+	if l.Severity == "FATAL" {
+		log.Fatal(string(COLOR_RESET), string(color), metadata, string(COLOR_RESET), l.Text)
+	} else {
+		log.Println(string(COLOR_RESET), string(color), metadata, string(COLOR_RESET), l.Text)
+	}
 }
 
 func Info(message string, a ...interface{}) {
@@ -72,6 +81,12 @@ func OK(message string, a ...interface{}) {
 func Error(message string, a ...interface{}) {
 	var l logMessage
 	l.createLogMessage("ERROR", message, a...)
+	l.printLogMessage()
+}
+
+func Fatal(message string, a ...interface{}) {
+	var l logMessage
+	l.createLogMessage("FATAL", message, a...)
 	l.printLogMessage()
 }
 
