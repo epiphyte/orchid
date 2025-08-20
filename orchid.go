@@ -108,3 +108,33 @@ func (l *Logger) Debug(a ...interface{}) {
 	msg := l.createLogMessage("DEBUG", a...)
 	l.printLogMessage(msg)
 }
+
+var defaultLogger Logger
+
+func Init(module_name string) {
+	defaultLogger.Init(module_name, "")
+}
+
+func Info(a ...interface{}) {
+	defaultLogger.Info(a...)
+}
+
+func OK(a ...interface{}) {
+	defaultLogger.OK(a...)
+}
+
+func Error(a ...interface{}) {
+	defaultLogger.Error(a...)
+}
+
+func Fatal(a ...interface{}) {
+	defaultLogger.Fatal(a...)
+}
+
+func Warn(a ...interface{}) {
+	defaultLogger.Warn(a...)
+}
+
+func Debug(a ...interface{}) {
+	defaultLogger.Debug(a...)
+}
