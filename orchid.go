@@ -1,18 +1,11 @@
-// Package orchid
-//Copyright (c) 2022 Epiphyte LLC. All rights reserved.
-// Use of this source code is governed by a MIT-style
-// license that can be found in the LICENSE file.
-// Author: Fernandez-Alcon, Jose
-// e-mail: jose@epiphyte.io
 package orchid
 
 import (
 	"fmt"
 	"log"
+	"os"
 	"time"
 )
-
-var module = "NO_NAME"
 
 const (
 	COLOR_RESET = "\033[0m"
@@ -24,96 +17,94 @@ const (
 	COLOR_DEBUG = "\033[48;5;5m"
 )
 
-//logMessage struct describes a log message
 type logMessage struct {
-	Severity string    //The severity of the message [INFO, DEBUG, SUCCESS, WARNING, ERROR, FATAL]
-	Text     string    //The contents of the log
-	Module   string    //The name of the module where the log was originated
-	Time     time.Time // The time at which the log was created
+	Severity string
+	Text     string
+	Module   string
+	Time     time.Time
 }
 
-//Init initializes de module. It sets a name of the module calling the logger to filter the logs
-func Init(module_name string) {
-	module = module_name
+type Logger struct {
+	module  string
+	logFile *os.File
 }
 
-//createLogMessage is internal helper to fill in the logMessage struct
-func (l *logMessage) createLogMessage(severity string, a ...interface{}) {
-	l.Time = time.Now()
-	l.Text = fmt.Sprint(a...)
-	l.Severity = severity
+func (l *Logger) Init(module_name, filePath string) error {
+	l.module = module_name
+	if filePath != "" {
+		var err error
+		l.logFile, err = os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+		if err != nil {
+			return fmt.Errorf("failed to open log file: %v", err)
+		}
+		log.SetOutput(l.logFile)
+	}
+	return nil
 }
 
-//printLogMessage is the internal function that colorizes and pretty prints the log message
-func (l *logMessage) printLogMessage() {
-	metadata := fmt.Sprintf("%-20s %-6s", module, l.Severity)
+func (l *Logger) createLogMessage(severity string, a ...interface{}) logMessage {
+	return logMessage{
+		Severity: severity,
+		Text:     fmt.Sprint(a...),
+		Module:   l.module,
+		Time:     time.Now(),
+	}
+}
+
+func (l *Logger) printLogMessage(msg logMessage) {
+	metadata := fmt.Sprintf("%-20s %-6s", msg.Module, msg.Severity)
 	color := COLOR_INFO
-	switch l.Severity {
+	switch msg.Severity {
 	case "INFO":
 		color = COLOR_INFO
-		break
 	case "OK":
 		color = COLOR_OK
-		break
 	case "WARN":
 		color = COLOR_WARN
-		break
 	case "ERROR":
 		color = COLOR_ERROR
-		break
 	case "FATAL":
 		color = COLOR_FATAL
-		break
 	case "DEBUG":
 		color = COLOR_DEBUG
-		break
 	}
-	if l.Severity == "FATAL" {
-		log.Fatal(string(COLOR_RESET), string(color), metadata, string(COLOR_RESET), l.Text)
+	message := fmt.Sprintf("%s %s %s %s %s", COLOR_RESET, color, metadata, COLOR_RESET, msg.Text)
+	if l.logFile != nil {
+		fmt.Fprintln(l.logFile, message)
+	}
+	if msg.Severity == "FATAL" {
+		log.Fatal(message)
 	} else {
-		log.Println(string(COLOR_RESET), string(color), metadata, string(COLOR_RESET), l.Text)
+		log.Println(message)
 	}
 }
 
-//Info prints a log message of the severity level Info which has blue background on the terminal
-func Info(a ...interface{}) {
-	var l logMessage
-	l.createLogMessage("INFO", a...)
-	l.printLogMessage()
+func (l *Logger) Info(a ...interface{}) {
+	msg := l.createLogMessage("INFO", a...)
+	l.printLogMessage(msg)
 }
 
-//OK prints a log message of the severity level OK which has green background on the terminal
-func OK(a ...interface{}) {
-	var l logMessage
-	l.createLogMessage("OK", a...)
-	l.printLogMessage()
+func (l *Logger) OK(a ...interface{}) {
+	msg := l.createLogMessage("OK", a...)
+	l.printLogMessage(msg)
 }
 
-//Error prints a log message of the severity level Error which has red background on the terminal
-func Error(a ...interface{}) {
-	var l logMessage
-	l.createLogMessage("ERROR", a...)
-	l.printLogMessage()
+func (l *Logger) Error(a ...interface{}) {
+	msg := l.createLogMessage("ERROR", a...)
+	l.printLogMessage(msg)
 }
 
-//Fatal prints a log message of the severity level Fatal which has red background on the terminal and terminates the
-//execution of the program
-func Fatal(a ...interface{}) {
-	var l logMessage
-	l.createLogMessage("FATAL", a...)
-	l.printLogMessage()
+func (l *Logger) Fatal(a ...interface{}) {
+	msg := l.createLogMessage("FATAL", a...)
+	l.printLogMessage(msg)
 }
 
-//Warn prints a log message of the severity level Warn which has yellow background on the terminal
-func Warn(a ...interface{}) {
-	var l logMessage
-	l.createLogMessage("WARN", a...)
-	l.printLogMessage()
+func (l *Logger) Warn(a ...interface{}) {
+	msg := l.createLogMessage("WARN", a...)
+	l.printLogMessage(msg)
 }
 
-//Debug prints a log message of the severity level Debug which has purple background on the terminal
-func Debug(a ...interface{}) {
-	var l logMessage
-	l.createLogMessage("DEBUG", a...)
-	l.printLogMessage()
+func (l *Logger) Debug(a ...interface{}) {
+	msg := l.createLogMessage("DEBUG", a...)
+	l.printLogMessage(msg)
 }
