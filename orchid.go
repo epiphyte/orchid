@@ -1,6 +1,7 @@
 package orchid
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -17,6 +18,13 @@ const (
 	COLOR_DEBUG = "\033[48;5;5m"
 )
 
+type FileFormat int
+
+const (
+	FormatTXT FileFormat = iota
+	FormatJSON
+)
+
 type logMessage struct {
 	Severity string
 	Text     string
@@ -25,19 +33,20 @@ type logMessage struct {
 }
 
 type Logger struct {
-	module  string
-	logFile *os.File
+	module     string
+	logFile    *os.File
+	fileFormat FileFormat
 }
 
-func (l *Logger) Init(module_name, filePath string) error {
+func (l *Logger) Init(module_name, filePath string, format FileFormat) error {
 	l.module = module_name
+	l.fileFormat = format
 	if filePath != "" {
 		var err error
 		l.logFile, err = os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 		if err != nil {
 			return fmt.Errorf("failed to open log file: %v", err)
 		}
-		log.SetOutput(l.logFile)
 	}
 	return nil
 }
@@ -48,6 +57,25 @@ func (l *Logger) createLogMessage(severity string, a ...interface{}) logMessage 
 		Text:     fmt.Sprint(a...),
 		Module:   l.module,
 		Time:     time.Now(),
+	}
+}
+
+func (l *Logger) writeToFile(msg logMessage) {
+	switch l.fileFormat {
+	case FormatTXT:
+		txtMessage := fmt.Sprintf("%s [%s] %s: %s", 
+			msg.Time.Format("2006-01-02 15:04:05"), 
+			msg.Severity, 
+			msg.Module, 
+			msg.Text)
+		fmt.Fprintln(l.logFile, txtMessage)
+	case FormatJSON:
+		jsonData, err := json.Marshal(msg)
+		if err != nil {
+			fmt.Fprintf(l.logFile, "Error marshaling log message to JSON: %v\n", err)
+			return
+		}
+		fmt.Fprintln(l.logFile, string(jsonData))
 	}
 }
 
@@ -68,14 +96,16 @@ func (l *Logger) printLogMessage(msg logMessage) {
 	case "DEBUG":
 		color = COLOR_DEBUG
 	}
-	message := fmt.Sprintf("%s %s %s %s %s", COLOR_RESET, color, metadata, COLOR_RESET, msg.Text)
+	consoleMessage := fmt.Sprintf("%s %s %s %s %s", COLOR_RESET, color, metadata, COLOR_RESET, msg.Text)
+	
 	if l.logFile != nil {
-		fmt.Fprintln(l.logFile, message)
+		l.writeToFile(msg)
 	}
+	
 	if msg.Severity == "FATAL" {
-		log.Fatal(message)
+		log.Fatal(consoleMessage)
 	} else {
-		log.Println(message)
+		log.Println(consoleMessage)
 	}
 }
 
@@ -112,7 +142,11 @@ func (l *Logger) Debug(a ...interface{}) {
 var defaultLogger Logger
 
 func Init(module_name string) {
-	defaultLogger.Init(module_name, "")
+	defaultLogger.Init(module_name, "", FormatTXT)
+}
+
+func InitWithFile(module_name, filePath string, format FileFormat) error {
+	return defaultLogger.Init(module_name, filePath, format)
 }
 
 func Info(a ...interface{}) {
