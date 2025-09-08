@@ -19,7 +19,7 @@ func TestINFO(t *testing.T) {
 
 	var logger Logger
 
-	logger.Init("TestFramework", "")
+	logger.Init("TestFramework", "", FormatTXT)
 	logger.Info("Test message")
 	res := strings.Split(buf.String(), " ")
 	if len(res) < 5 || res[4] != "TestFramework" {
