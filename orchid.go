@@ -109,34 +109,33 @@ func (l *Logger) printLogMessage(msg logMessage) {
 	}
 }
 
-func (l *Logger) Info(a ...interface{}) {
-	msg := l.createLogMessage("INFO", a...)
+func (l *Logger) log(severity string, a ...interface{}) {
+	msg := l.createLogMessage(severity, a...)
 	l.printLogMessage(msg)
+}
+
+func (l *Logger) Info(a ...interface{}) {
+	l.log("INFO", a...)
 }
 
 func (l *Logger) OK(a ...interface{}) {
-	msg := l.createLogMessage("OK", a...)
-	l.printLogMessage(msg)
+	l.log("OK", a...)
 }
 
 func (l *Logger) Error(a ...interface{}) {
-	msg := l.createLogMessage("ERROR", a...)
-	l.printLogMessage(msg)
+	l.log("ERROR", a...)
 }
 
 func (l *Logger) Fatal(a ...interface{}) {
-	msg := l.createLogMessage("FATAL", a...)
-	l.printLogMessage(msg)
+	l.log("FATAL", a...)
 }
 
 func (l *Logger) Warn(a ...interface{}) {
-	msg := l.createLogMessage("WARN", a...)
-	l.printLogMessage(msg)
+	l.log("WARN", a...)
 }
 
 func (l *Logger) Debug(a ...interface{}) {
-	msg := l.createLogMessage("DEBUG", a...)
-	l.printLogMessage(msg)
+	l.log("DEBUG", a...)
 }
 
 var defaultLogger Logger
@@ -150,25 +149,25 @@ func InitWithFile(moduleName, filePath string, format FileFormat) error {
 }
 
 func Info(a ...interface{}) {
-	defaultLogger.Info(a...)
+	defaultLogger.log("INFO", a...)
 }
 
 func OK(a ...interface{}) {
-	defaultLogger.OK(a...)
+	defaultLogger.log("OK", a...)
 }
 
 func Error(a ...interface{}) {
-	defaultLogger.Error(a...)
+	defaultLogger.log("ERROR", a...)
 }
 
 func Fatal(a ...interface{}) {
-	defaultLogger.Fatal(a...)
+	defaultLogger.log("FATAL", a...)
 }
 
 func Warn(a ...interface{}) {
-	defaultLogger.Warn(a...)
+	defaultLogger.log("WARN", a...)
 }
 
 func Debug(a ...interface{}) {
-	defaultLogger.Debug(a...)
+	defaultLogger.log("DEBUG", a...)
 }
