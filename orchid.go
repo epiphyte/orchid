@@ -1,3 +1,31 @@
+// Package orchid provides a colorized, structured logging library for Go applications.
+//
+// Orchid supports different severity levels (INFO, OK, WARN, ERROR, FATAL, DEBUG)
+// with ANSI color-coded console output and optional file logging in both text
+// and JSON formats.
+//
+// Basic usage with the default logger:
+//
+//	orchid.Init("my-app")
+//	orchid.Info("Application starting")
+//	orchid.Error("Something went wrong")
+//
+// Usage with file logging:
+//
+//	err := orchid.InitWithFile("my-app", "app.log", orchid.FormatJSON)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	orchid.Info("This will be logged to both console and file")
+//
+// Usage with custom logger instances:
+//
+//	var logger orchid.Logger
+//	err := logger.Init("database", "db.log", orchid.FormatTXT)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	logger.Info("Database connection established")
 package orchid
 
 import (
@@ -8,36 +36,47 @@ import (
 	"time"
 )
 
+// ANSI color codes for different log levels
 const (
-	COLOR_RESET = "\033[0m"
-	COLOR_INFO  = "\033[48;5;33m"
-	COLOR_OK    = "\033[48;5;36m"
-	COLOR_WARN  = "\033[48;5;3m"
-	COLOR_ERROR = "\033[48;5;1m"
-	COLOR_FATAL = "\033[48;5;1m"
-	COLOR_DEBUG = "\033[48;5;5m"
+	COLOR_RESET = "\033[0m"      // Reset color
+	COLOR_INFO  = "\033[48;5;33m" // Blue background for INFO
+	COLOR_OK    = "\033[48;5;36m" // Cyan background for OK
+	COLOR_WARN  = "\033[48;5;3m"  // Yellow background for WARN
+	COLOR_ERROR = "\033[48;5;1m"  // Red background for ERROR
+	COLOR_FATAL = "\033[48;5;1m"  // Red background for FATAL
+	COLOR_DEBUG = "\033[48;5;5m"  // Magenta background for DEBUG
 )
 
+// FileFormat represents the format for file logging output.
 type FileFormat int
 
+// Available file formats for logging output.
 const (
-	FormatTXT FileFormat = iota
-	FormatJSON
+	FormatTXT  FileFormat = iota // Plain text format
+	FormatJSON                   // JSON format
 )
 
+// logMessage represents an internal log message structure.
 type logMessage struct {
-	Severity string
-	Text     string
-	Module   string
-	Time     time.Time
+	Severity string    // Log severity level (INFO, ERROR, etc.)
+	Text     string    // Log message text
+	Module   string    // Module name that generated the log
+	Time     time.Time // Timestamp when the log was created
 }
 
+// Logger represents a structured logger instance with optional file output.
+// Each Logger instance is associated with a specific module name and can
+// optionally write to a file in addition to console output.
 type Logger struct {
-	module     string
-	logFile    *os.File
-	fileFormat FileFormat
+	module     string      // Module name for this logger instance
+	logFile    *os.File    // Optional file handle for logging to disk
+	fileFormat FileFormat  // Format to use when writing to file
 }
 
+// Init initializes the Logger with a module name, optional file path, and file format.
+// If filePath is empty, only console logging will be used.
+// If filePath is provided, logs will be written to both console and file.
+// Returns an error if the file cannot be opened for writing.
 func (l *Logger) Init(moduleName, filePath string, format FileFormat) error {
 	l.module = moduleName
 	l.fileFormat = format
@@ -51,6 +90,7 @@ func (l *Logger) Init(moduleName, filePath string, format FileFormat) error {
 	return nil
 }
 
+// createLogMessage creates a logMessage struct with the given severity and message.
 func (l *Logger) createLogMessage(severity string, a ...interface{}) logMessage {
 	return logMessage{
 		Severity: severity,
@@ -60,6 +100,7 @@ func (l *Logger) createLogMessage(severity string, a ...interface{}) logMessage 
 	}
 }
 
+// writeToFile writes a log message to the file in the specified format.
 func (l *Logger) writeToFile(msg logMessage) {
 	switch l.fileFormat {
 	case FormatTXT:
@@ -79,6 +120,8 @@ func (l *Logger) writeToFile(msg logMessage) {
 	}
 }
 
+// printLogMessage outputs a log message to the console with colors and optionally to file.
+// FATAL messages will call log.Fatal() which exits the program.
 func (l *Logger) printLogMessage(msg logMessage) {
 	metadata := fmt.Sprintf("%-20s %-6s", msg.Module, msg.Severity)
 	color := COLOR_INFO
@@ -109,65 +152,82 @@ func (l *Logger) printLogMessage(msg logMessage) {
 	}
 }
 
+// log is the internal method that handles logging for all severity levels.
 func (l *Logger) log(severity string, a ...interface{}) {
 	msg := l.createLogMessage(severity, a...)
 	l.printLogMessage(msg)
 }
 
+// Info logs a message at INFO level with blue background color.
 func (l *Logger) Info(a ...interface{}) {
 	l.log("INFO", a...)
 }
 
+// OK logs a message at OK level with cyan background color.
 func (l *Logger) OK(a ...interface{}) {
 	l.log("OK", a...)
 }
 
+// Error logs a message at ERROR level with red background color.
 func (l *Logger) Error(a ...interface{}) {
 	l.log("ERROR", a...)
 }
 
+// Fatal logs a message at FATAL level with red background color and exits the program.
 func (l *Logger) Fatal(a ...interface{}) {
 	l.log("FATAL", a...)
 }
 
+// Warn logs a message at WARN level with yellow background color.
 func (l *Logger) Warn(a ...interface{}) {
 	l.log("WARN", a...)
 }
 
+// Debug logs a message at DEBUG level with magenta background color.
 func (l *Logger) Debug(a ...interface{}) {
 	l.log("DEBUG", a...)
 }
 
 var defaultLogger Logger
 
+// Init initializes the default logger with console-only output.
+// This is a convenience function for simple logging without file output.
 func Init(moduleName string) {
 	defaultLogger.Init(moduleName, "", FormatTXT)
 }
 
+// InitWithFile initializes the default logger with both console and file output.
+// Returns an error if the file cannot be opened for writing.
 func InitWithFile(moduleName, filePath string, format FileFormat) error {
 	return defaultLogger.Init(moduleName, filePath, format)
 }
 
+// Info logs a message at INFO level using the default logger.
 func Info(a ...interface{}) {
 	defaultLogger.log("INFO", a...)
 }
 
+// OK logs a message at OK level using the default logger.
 func OK(a ...interface{}) {
 	defaultLogger.log("OK", a...)
 }
 
+// Error logs a message at ERROR level using the default logger.
 func Error(a ...interface{}) {
 	defaultLogger.log("ERROR", a...)
 }
 
+// Fatal logs a message at FATAL level using the default logger and exits the program.
 func Fatal(a ...interface{}) {
 	defaultLogger.log("FATAL", a...)
 }
 
+// Warn logs a message at WARN level using the default logger.
 func Warn(a ...interface{}) {
 	defaultLogger.log("WARN", a...)
 }
 
+// Debug logs a message at DEBUG level using the default logger.
 func Debug(a ...interface{}) {
 	defaultLogger.log("DEBUG", a...)
 }
