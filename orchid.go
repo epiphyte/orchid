@@ -16,6 +16,7 @@
 //	if err != nil {
 //		log.Fatal(err)
 //	}
+//	defer orchid.Close() // Important: clean up resources
 //	orchid.Info("This will be logged to both console and file")
 //
 // Usage with custom logger instances:
@@ -25,6 +26,7 @@
 //	if err != nil {
 //		log.Fatal(err)
 //	}
+//	defer logger.Close() // Important: clean up resources
 //	logger.Info("Database connection established")
 package orchid
 
@@ -76,8 +78,15 @@ type Logger struct {
 // Init initializes the Logger with a module name, optional file path, and file format.
 // If filePath is empty, only console logging will be used.
 // If filePath is provided, logs will be written to both console and file.
+// If the logger already has a file open, it will be closed before opening the new one.
 // Returns an error if the file cannot be opened for writing.
 func (l *Logger) Init(moduleName, filePath string, format FileFormat) error {
+	// Close existing file if open
+	if l.logFile != nil {
+		l.logFile.Close()
+		l.logFile = nil
+	}
+
 	l.module = moduleName
 	l.fileFormat = format
 	if filePath != "" {
@@ -86,6 +95,18 @@ func (l *Logger) Init(moduleName, filePath string, format FileFormat) error {
 		if err != nil {
 			return fmt.Errorf("failed to open log file: %v", err)
 		}
+	}
+	return nil
+}
+
+// Close closes the log file if it's open and cleans up resources.
+// It's safe to call Close multiple times or on a logger without a file.
+// After calling Close, the logger will only output to console.
+func (l *Logger) Close() error {
+	if l.logFile != nil {
+		err := l.logFile.Close()
+		l.logFile = nil
+		return err
 	}
 	return nil
 }
@@ -230,4 +251,10 @@ func Warn(a ...interface{}) {
 // Debug logs a message at DEBUG level using the default logger.
 func Debug(a ...interface{}) {
 	defaultLogger.log("DEBUG", a...)
+}
+
+// Close closes the default logger's file if it's open and cleans up resources.
+// This should be called before program termination to ensure proper cleanup.
+func Close() error {
+	return defaultLogger.Close()
 }
