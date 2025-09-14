@@ -250,36 +250,50 @@ func Init(moduleName string) {
 
 // Info logs a message at INFO level using the default logger.
 func Info(a ...interface{}) {
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
 	defaultLogger.log("INFO", a...)
 }
 
 // OK logs a message at OK level using the default logger.
 func OK(a ...interface{}) {
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
 	defaultLogger.log("OK", a...)
 }
 
 // Error logs a message at ERROR level using the default logger.
 func Error(a ...interface{}) {
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
 	defaultLogger.log("ERROR", a...)
 }
 
 // Fatal logs a message at FATAL level using the default logger and exits the program.
 func Fatal(a ...interface{}) {
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
 	defaultLogger.log("FATAL", a...)
 }
 
 // Warn logs a message at WARN level using the default logger.
 func Warn(a ...interface{}) {
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
 	defaultLogger.log("WARN", a...)
 }
 
 // Debug logs a message at DEBUG level using the default logger.
 func Debug(a ...interface{}) {
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
 	defaultLogger.log("DEBUG", a...)
 }
 
 // SetLogFile sets the log file and format for the default logger.
 func SetLogFile(filePath string, format FileFormat) error {
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
 	return defaultLogger.SetLogFile(filePath, format)
 }
 

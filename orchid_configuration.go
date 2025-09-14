@@ -26,8 +26,8 @@ var (
 func GetConfiguration() *Configuration {
 	configOnce.Do(func() {
 		configInstance = &Configuration{
-			defaultFile:   "app.log",  // No default file - console only
-			defaultFormat: FormatJSON, // Default to text format
+			defaultFile:   "",         // No default file - console only
+			defaultFormat: FormatTXT,  // Default to text format
 			enableColors:  true,       // Colors enabled by default
 		}
 	})
