@@ -2,7 +2,8 @@
 //
 // Orchid supports different severity levels (INFO, OK, WARN, ERROR, FATAL, DEBUG)
 // with ANSI color-coded console output and optional file logging in both text
-// and JSON formats.
+// and JSON formats. The library uses a global configuration system for managing
+// logging settings including colors, file output, and formatting.
 //
 // Basic usage with the default logger:
 //
@@ -12,7 +13,8 @@
 //
 // Usage with file logging:
 //
-//	err := orchid.InitWithFile("my-app", "app.log", orchid.FormatJSON)
+//	orchid.Init("my-app")
+//	err := orchid.SetLogFile("app.log", orchid.FormatJSON)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -21,12 +23,22 @@
 // Usage with custom logger instances:
 //
 //	var logger orchid.Logger
-//	err := logger.Init("database", "db.log", orchid.FormatTXT)
+//	err := logger.Init("database")
 //	if err != nil {
 //		log.Fatal(err)
 //	}
-//	defer logger.Close() // Important: clean up resources
+//	err = logger.SetLogFile("db.log", orchid.FormatTXT)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
 //	logger.Info("Database connection established")
+//
+// Global configuration can be used to control logging behavior:
+//
+//	config := orchid.GetConfiguration()
+//	config.SetEnableColors(false) // Disable color output
+//	config.SetDefaultFile("global.log")
+//	config.SetDefaultFormat(orchid.FormatJSON)
 package orchid
 
 import (
