@@ -1,0 +1,101 @@
+package orchid
+
+import (
+	"fmt"
+	"os"
+	"sync"
+)
+
+// Configuration holds global configuration settings for the orchid logger.
+// This singleton manages default file path, format, and other global settings.
+type Configuration struct {
+	mu            sync.RWMutex // Protects configuration fields
+	defaultFile   string       // Default file path for logging
+	defaultFormat FileFormat   // Default format for file logging
+	enableColors  bool         // Enable/disable color output
+	logFile       *os.File     // Shared log file instance
+}
+
+var (
+	configInstance *Configuration
+	configOnce     sync.Once
+)
+
+// GetConfiguration returns the singleton configuration instance.
+// This function is thread-safe and uses lazy initialization.
+func GetConfiguration() *Configuration {
+	configOnce.Do(func() {
+		configInstance = &Configuration{
+			defaultFile:   "app.log",  // No default file - console only
+			defaultFormat: FormatJSON, // Default to text format
+			enableColors:  true,       // Colors enabled by default
+		}
+	})
+	return configInstance
+}
+
+func (c *Configuration) getLogFile() *os.File {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.logFile
+}
+
+// SetDefaultFile sets the default file path for all new loggers.
+// Pass empty string to disable file logging by default.
+func (c *Configuration) SetDefaultFile(filePath string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.defaultFile = filePath
+	var err error
+	c.logFile, err = os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %v", err)
+	}
+
+	return nil
+}
+
+// GetDefaultFile returns the current default file path.
+func (c *Configuration) GetDefaultFile() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.defaultFile
+}
+
+// SetDefaultFormat sets the default format for file logging.
+func (c *Configuration) SetDefaultFormat(format FileFormat) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.defaultFormat = format
+}
+
+// GetDefaultFormat returns the current default file format.
+func (c *Configuration) GetDefaultFormat() FileFormat {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.defaultFormat
+}
+
+// SetEnableColors enables or disables color output for console logging.
+func (c *Configuration) SetEnableColors(enable bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.enableColors = enable
+}
+
+// GetEnableColors returns whether colors are enabled for console output.
+func (c *Configuration) GetEnableColors() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.enableColors
+}
+
+// Reset resets all configuration values to their defaults.
+// This is primarily useful for testing.
+func (c *Configuration) Reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.defaultFile = "app.log"
+	c.defaultFormat = FormatTXT
+	c.enableColors = true
+}
