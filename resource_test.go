@@ -16,8 +16,8 @@ func TestResourceCleanup(t *testing.T) {
 		t.Fatalf("Failed to init logger: %v", err)
 	}
 
-	// Set up file logging
-	err = logger.SetLogFile(testFile, FormatTXT)
+	// Set up global file logging
+	err = SetLogFile(testFile, FormatTXT)
 	if err != nil {
 		t.Fatalf("Failed to set log file: %v", err)
 	}
@@ -45,8 +45,8 @@ func TestReInitialization(t *testing.T) {
 		t.Fatalf("Failed to init logger first time: %v", err)
 	}
 
-	// Set first file
-	err = logger.SetLogFile(testFile1, FormatTXT)
+	// Set first global file
+	err = SetLogFile(testFile1, FormatTXT)
 	if err != nil {
 		t.Fatalf("Failed to set first log file: %v", err)
 	}
@@ -54,19 +54,19 @@ func TestReInitialization(t *testing.T) {
 	// Write to first file
 	logger.Info("Message to file 1")
 
+	// Change global file (affects all loggers)
+	err = SetLogFile(testFile2, FormatJSON)
+	if err != nil {
+		t.Fatalf("Failed to set second log file: %v", err)
+	}
+
 	// Re-initialize with different module name
 	err = logger.Init("test2")
 	if err != nil {
 		t.Fatalf("Failed to re-init logger: %v", err)
 	}
 
-	// Set second file
-	err = logger.SetLogFile(testFile2, FormatJSON)
-	if err != nil {
-		t.Fatalf("Failed to set second log file: %v", err)
-	}
-
-	// Write to second file
+	// Write to second file (uses current global config)
 	logger.Info("Message to file 2")
 
 	// Clean up

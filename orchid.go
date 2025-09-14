@@ -22,16 +22,26 @@
 //
 // Usage with custom logger instances:
 //
-//	var logger orchid.Logger
-//	err := logger.Init("database")
+//	// Set global file for all loggers
+//	err := orchid.SetLogFile("app.log", orchid.FormatTXT)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
-//	err = logger.SetLogFile("db.log", orchid.FormatTXT)
+//
+//	// Create individual loggers - they all write to the same global file
+//	var dbLogger orchid.Logger
+//	err = dbLogger.Init("database")
 //	if err != nil {
 //		log.Fatal(err)
 //	}
-//	logger.Info("Database connection established")
+//	dbLogger.Info("Database connection established")
+//
+//	var apiLogger orchid.Logger
+//	err = apiLogger.Init("api")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	apiLogger.Info("API server started")
 //
 // Global configuration can be used to control logging behavior:
 //
@@ -49,6 +59,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -81,24 +93,33 @@ type logMessage struct {
 	Time     time.Time // Timestamp when the log was created
 }
 
-// Logger represents a structured logger instance with optional file output.
-// Each Logger instance is associated with a specific module name and can
-// optionally write to a file in addition to console output.
+// Logger represents a structured logger instance for a specific module.
+// Each Logger instance is associated with a module name and writes to both
+// console output and the global log file (if configured).
+// All Logger instances share the same global file configuration.
 // Logger is safe for concurrent use by multiple goroutines.
 type Logger struct {
 	mu     sync.Mutex // Protects all fields and operations
 	module string     // Module name for this logger instance
 }
 
-// Init initializes the Logger with a module name, optional file path, and file format.
-// If filePath is empty, only console logging will be used.
-// If filePath is provided, logs will be written to both console and file.
-// If the logger already has a file open, it will be closed before opening the new one.
-// Returns an error if the file cannot be opened for writing.
+// Init initializes the Logger with a module name.
+// The logger will write to both console output and the global log file
+// (if one is configured via SetLogFile).
+// Returns an error if the module name is invalid.
 func (l *Logger) Init(moduleName string) error {
+	// Validate module name before acquiring lock
+	trimmed := strings.TrimSpace(moduleName)
+	if trimmed == "" {
+		return fmt.Errorf("module name cannot be empty or whitespace-only")
+	}
+	if len(trimmed) > 50 {
+		return fmt.Errorf("module name too long (max 50 characters): %d", len(trimmed))
+	}
+
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.module = moduleName
+	l.module = trimmed
 
 	return nil
 }
@@ -114,15 +135,16 @@ func (l *Logger) createLogMessage(severity string, a ...interface{}) logMessage 
 }
 
 // writeToFile writes a log message to the file in the specified format.
-func (l *Logger) writeToFile(msg logMessage) {
+// Returns an error if the write operation fails.
+func (l *Logger) writeToFile(msg logMessage) error {
 	config := GetConfiguration()
 	if config.GetDefaultFile() == "" {
-		return // No file configured
+		return nil // No file configured - not an error
 	}
 
 	logFile := config.getLogFile()
 	if logFile == nil {
-		return // No file handle available
+		return fmt.Errorf("log file configured but file handle is not available")
 	}
 
 	switch config.GetDefaultFormat() {
@@ -132,15 +154,22 @@ func (l *Logger) writeToFile(msg logMessage) {
 			msg.Severity,
 			msg.Module,
 			msg.Text)
-		fmt.Fprintln(logFile, txtMessage)
+		if _, err := fmt.Fprintln(logFile, txtMessage); err != nil {
+			return fmt.Errorf("failed to write text log to file: %w", err)
+		}
 	case FormatJSON:
 		jsonData, err := json.Marshal(msg)
 		if err != nil {
-			fmt.Fprintf(logFile, "Error marshaling log message to JSON: %v\n", err)
-			return
+			return fmt.Errorf("failed to marshal log message to JSON: %w", err)
 		}
-		fmt.Fprintln(logFile, string(jsonData))
+		if _, err := fmt.Fprintln(logFile, string(jsonData)); err != nil {
+			return fmt.Errorf("failed to write JSON log to file: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported log format: %d", config.GetDefaultFormat())
 	}
+
+	return nil
 }
 
 // printLogMessage outputs a log message to the console with colors and optionally to file.
@@ -173,27 +202,17 @@ func (l *Logger) printLogMessage(msg logMessage) {
 		consoleMessage = fmt.Sprintf("%s %s", metadata, msg.Text)
 	}
 
-	l.writeToFile(msg)
+	// Attempt to write to file, but don't let file errors prevent console logging
+	if err := l.writeToFile(msg); err != nil {
+		// Log file write errors to stderr without breaking the logging flow
+		fmt.Fprintf(os.Stderr, "ORCHID FILE ERROR: %v\n", err)
+	}
 
 	if msg.Severity == "FATAL" {
 		log.Fatal(consoleMessage)
 	} else {
 		log.Println(consoleMessage)
 	}
-}
-
-func (l *Logger) SetLogFile(filePath string, format FileFormat) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	config := GetConfiguration()
-	err := config.SetDefaultFile(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to set log file: %v", err)
-	}
-	config.SetDefaultFormat(format)
-
-	return nil
 }
 
 // log is the internal method that handles logging for all severity levels.
@@ -242,10 +261,11 @@ var (
 
 // Init initializes the default logger with console-only output.
 // This is a convenience function for simple logging without file output.
-func Init(moduleName string) {
+// Returns an error if the module name is invalid.
+func Init(moduleName string) error {
 	defaultMu.Lock()
 	defer defaultMu.Unlock()
-	defaultLogger.Init(moduleName)
+	return defaultLogger.Init(moduleName)
 }
 
 // Info logs a message at INFO level using the default logger.
@@ -290,11 +310,40 @@ func Debug(a ...interface{}) {
 	defaultLogger.log("DEBUG", a...)
 }
 
-// SetLogFile sets the log file and format for the default logger.
+// SetLogFile sets the global log file and format for ALL loggers.
+// This affects both the default logger and all individual Logger instances.
+// All loggers will write to the same file using the specified format.
 func SetLogFile(filePath string, format FileFormat) error {
+	// Validate inputs before acquiring lock
+	if format < FormatTXT || format > FormatJSON {
+		return fmt.Errorf("invalid log format: %d (must be between %d and %d)", format, FormatTXT, FormatJSON)
+	}
+
+	// Allow empty filePath to disable file logging
+	if filePath != "" {
+		// Basic file path validation
+		if strings.TrimSpace(filePath) != filePath {
+			return fmt.Errorf("file path cannot have leading or trailing whitespace")
+		}
+		if strings.Contains(filePath, "\x00") {
+			return fmt.Errorf("file path cannot contain null bytes")
+		}
+		if len(filePath) > 260 {
+			return fmt.Errorf("file path too long (max 260 characters): %d", len(filePath))
+		}
+	}
+
 	defaultMu.Lock()
 	defer defaultMu.Unlock()
-	return defaultLogger.SetLogFile(filePath, format)
+
+	config := GetConfiguration()
+	err := config.SetDefaultFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to set log file: %w", err)
+	}
+	config.SetDefaultFormat(format)
+
+	return nil
 }
 
 // Close closes any open file handles in the global configuration.

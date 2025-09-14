@@ -17,8 +17,8 @@ func TestConcurrentLogging(t *testing.T) {
 		t.Fatalf("Failed to init logger: %v", err)
 	}
 
-	// Set up file logging
-	err = logger.SetLogFile(testFile, FormatTXT)
+	// Set up global file logging
+	err = SetLogFile(testFile, FormatTXT)
 	if err != nil {
 		t.Fatalf("Failed to set log file: %v", err)
 	}
@@ -120,33 +120,35 @@ func TestGlobalLoggerConcurrency(t *testing.T) {
 	t.Log("Global logger concurrency test completed successfully")
 }
 
-func TestConcurrentFileOperations(t *testing.T) {
+func TestConcurrentMultipleLoggers(t *testing.T) {
 	const numLoggers = 10
 	const numLogs = 20
+	testFile := "test_concurrent_shared.log"
 
 	var loggers [numLoggers]Logger
 	var wg sync.WaitGroup
 
-	// Start multiple loggers writing to different files concurrently
+	// Set global file that all loggers will use
+	err := SetLogFile(testFile, FormatJSON)
+	if err != nil {
+		t.Fatalf("Failed to set global log file: %v", err)
+	}
+	defer os.Remove(testFile)
+
+	// Start multiple loggers writing to the same global file concurrently
 	for i := 0; i < numLoggers; i++ {
 		wg.Add(1)
 		go func(loggerID int) {
 			defer wg.Done()
 
-			testFile := "test_concurrent_" + string(rune('0'+loggerID)) + ".log"
-			err := loggers[loggerID].Init("concurrent-logger")
+			moduleName := "logger-" + string(rune('0'+loggerID))
+			err := loggers[loggerID].Init(moduleName)
 			if err != nil {
 				t.Errorf("Failed to init logger %d: %v", loggerID, err)
 				return
 			}
-			err = loggers[loggerID].SetLogFile(testFile, FormatJSON)
-			if err != nil {
-				t.Errorf("Failed to set log file for logger %d: %v", loggerID, err)
-				return
-			}
-			defer os.Remove(testFile)
 
-			// Write logs
+			// Write logs - all loggers write to the same global file
 			for j := 0; j < numLogs; j++ {
 				loggers[loggerID].Info("Logger", loggerID, "message", j)
 				loggers[loggerID].Error("Logger", loggerID, "error", j)
@@ -155,5 +157,5 @@ func TestConcurrentFileOperations(t *testing.T) {
 	}
 
 	wg.Wait()
-	t.Log("Concurrent file operations completed successfully")
+	t.Log("Concurrent multiple loggers completed successfully")
 }
