@@ -6,14 +6,20 @@ import (
 )
 
 func TestResourceCleanup(t *testing.T) {
-	// Test Close method on logger with file
+	// Test file operations with logger
 	var logger Logger
 	testFile := "test_resource_cleanup.log"
 
-	// Initialize with file
-	err := logger.Init("test", testFile, FormatTXT)
+	// Initialize logger
+	err := logger.Init("test")
 	if err != nil {
 		t.Fatalf("Failed to init logger: %v", err)
+	}
+
+	// Set up file logging
+	err = logger.SetLogFile(testFile, FormatTXT)
+	if err != nil {
+		t.Fatalf("Failed to set log file: %v", err)
 	}
 
 	// Write a log message to ensure file is created
@@ -22,23 +28,6 @@ func TestResourceCleanup(t *testing.T) {
 	// Verify file was created
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Error("Log file was not created")
-	}
-
-	// Close the logger
-	err = logger.Close()
-	if err != nil {
-		t.Errorf("Error closing logger: %v", err)
-	}
-
-	// Verify file handle is nil
-	if logger.logFile != nil {
-		t.Error("Log file handle should be nil after Close()")
-	}
-
-	// Calling Close again should be safe
-	err = logger.Close()
-	if err != nil {
-		t.Errorf("Second Close() should not error: %v", err)
 	}
 
 	// Clean up test file
@@ -51,45 +40,58 @@ func TestReInitialization(t *testing.T) {
 	testFile2 := "test_reinit2.log"
 
 	// First initialization
-	err := logger.Init("test1", testFile1, FormatTXT)
+	err := logger.Init("test1")
 	if err != nil {
 		t.Fatalf("Failed to init logger first time: %v", err)
+	}
+
+	// Set first file
+	err = logger.SetLogFile(testFile1, FormatTXT)
+	if err != nil {
+		t.Fatalf("Failed to set first log file: %v", err)
 	}
 
 	// Write to first file
 	logger.Info("Message to file 1")
 
-	// Re-initialize with different file (should close first file)
-	err = logger.Init("test2", testFile2, FormatJSON)
+	// Re-initialize with different module name
+	err = logger.Init("test2")
 	if err != nil {
 		t.Fatalf("Failed to re-init logger: %v", err)
+	}
+
+	// Set second file
+	err = logger.SetLogFile(testFile2, FormatJSON)
+	if err != nil {
+		t.Fatalf("Failed to set second log file: %v", err)
 	}
 
 	// Write to second file
 	logger.Info("Message to file 2")
 
 	// Clean up
-	logger.Close()
 	os.Remove(testFile1)
 	os.Remove(testFile2)
 }
 
-func TestGlobalLoggerClose(t *testing.T) {
-	testFile := "test_global_close.log"
+func TestGlobalLoggerFileOperations(t *testing.T) {
+	testFile := "test_global_file.log"
 
-	// Initialize global logger with file
-	err := InitWithFile("global-test", testFile, FormatTXT)
+	// Initialize global logger
+	Init("global-test")
+
+	// Set up file logging
+	err := SetLogFile(testFile, FormatTXT)
 	if err != nil {
-		t.Fatalf("Failed to init global logger: %v", err)
+		t.Fatalf("Failed to set log file for global logger: %v", err)
 	}
 
 	// Log a message
 	Info("Global test message")
 
-	// Close global logger
-	err = Close()
-	if err != nil {
-		t.Errorf("Error closing global logger: %v", err)
+	// Verify file was created
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Error("Global log file was not created")
 	}
 
 	// Clean up test file

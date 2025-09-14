@@ -15,21 +15,75 @@ import (
 
 func TestINFO(t *testing.T) {
 	var buf bytes.Buffer
+	originalOutput := log.Writer()
 	log.SetOutput(&buf)
+	defer log.SetOutput(originalOutput) // Reset to original
 
 	var logger Logger
 
-	logger.Init("TestFramework", "", FormatTXT)
-	logger.Info("Test message")
-	res := strings.Split(buf.String(), " ")
-	if len(res) < 5 || res[4] != "TestFramework" {
-		t.Errorf("Expected TestFramework in position 4, got: %v", res)
+	err := logger.Init("TestFramework")
+	if err != nil {
+		t.Fatalf("Failed to init logger: %v", err)
 	}
-	//for i, s := range res {
-	//	fmt.Println(i, s)
-	//}
-	//OK("OK")
-	//Error("ERROR")
-	//Warn("WARNING")
-	//Debug("DEBUG")
+
+	logger.Info("Test message")
+	output := buf.String()
+	if !strings.Contains(output, "TestFramework") {
+		t.Errorf("Expected TestFramework in output, got: %s", output)
+	}
+	if !strings.Contains(output, "INFO") {
+		t.Errorf("Expected INFO in output, got: %s", output)
+	}
+}
+
+func TestAllLogLevels(t *testing.T) {
+	var buf bytes.Buffer
+	originalOutput := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(originalOutput)
+
+	var logger Logger
+	err := logger.Init("TestModule")
+	if err != nil {
+		t.Fatalf("Failed to init logger: %v", err)
+	}
+
+	testCases := []struct {
+		method   func(...interface{})
+		expected string
+	}{
+		{logger.Info, "INFO"},
+		{logger.OK, "OK"},
+		{logger.Warn, "WARN"},
+		{logger.Error, "ERROR"},
+		{logger.Debug, "DEBUG"},
+	}
+
+	for _, tc := range testCases {
+		buf.Reset()
+		tc.method("test message")
+		output := buf.String()
+		if !strings.Contains(output, tc.expected) {
+			t.Errorf("Expected %s in output, got: %s", tc.expected, output)
+		}
+		if !strings.Contains(output, "TestModule") {
+			t.Errorf("Expected TestModule in output, got: %s", output)
+		}
+	}
+}
+
+func TestGlobalLogger(t *testing.T) {
+	var buf bytes.Buffer
+	originalOutput := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(originalOutput)
+
+	Init("GlobalTest")
+
+	buf.Reset()
+	Info("global info message")
+	output := buf.String()
+	if !strings.Contains(output, "INFO") || !strings.Contains(output, "GlobalTest") {
+		t.Errorf("Expected INFO and GlobalTest in output, got: %s", output)
+	}
 }

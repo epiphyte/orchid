@@ -11,15 +11,18 @@ func TestConcurrentLogging(t *testing.T) {
 	var logger Logger
 	testFile := "test_concurrent.log"
 
-	// Initialize logger with file
-	err := logger.Init("concurrent-test", testFile, FormatTXT)
+	// Initialize logger
+	err := logger.Init("concurrent-test")
 	if err != nil {
 		t.Fatalf("Failed to init logger: %v", err)
 	}
-	defer func() {
-		logger.Close()
-		os.Remove(testFile)
-	}()
+
+	// Set up file logging
+	err = logger.SetLogFile(testFile, FormatTXT)
+	if err != nil {
+		t.Fatalf("Failed to set log file: %v", err)
+	}
+	defer os.Remove(testFile)
 
 	const numGoroutines = 100
 	const logsPerGoroutine = 50
@@ -45,48 +48,40 @@ func TestConcurrentLogging(t *testing.T) {
 	t.Log("Concurrent logging completed successfully")
 }
 
-func TestConcurrentInitAndClose(t *testing.T) {
+func TestConcurrentInit(t *testing.T) {
 	var logger Logger
 	const numOperations = 50
 	var wg sync.WaitGroup
 
-	// Test concurrent Init and Close operations
+	// Test concurrent Init operations
 	for i := 0; i < numOperations; i++ {
-		wg.Add(2)
+		wg.Add(1)
 
 		// Goroutine doing Init
 		go func(id int) {
 			defer wg.Done()
-			testFile := "test_init_close.log"
-			logger.Init("test", testFile, FormatTXT)
+			err := logger.Init("test")
+			if err != nil {
+				t.Errorf("Init failed: %v", err)
+			}
 			time.Sleep(time.Millisecond) // Small delay to allow some logging
-			os.Remove(testFile)          // Clean up
-		}(i)
-
-		// Goroutine doing Close
-		go func(id int) {
-			defer wg.Done()
-			time.Sleep(time.Millisecond) // Small delay
-			logger.Close()
 		}(i)
 	}
 
 	wg.Wait()
-	t.Log("Concurrent Init/Close completed successfully")
+	t.Log("Concurrent Init completed successfully")
 }
 
 func TestGlobalLoggerConcurrency(t *testing.T) {
 	testFile := "test_global_concurrent.log"
 
 	// Initialize global logger
-	err := InitWithFile("global-concurrent-test", testFile, FormatJSON)
+	Init("global-concurrent-test")
+	err := SetLogFile(testFile, FormatJSON)
 	if err != nil {
-		t.Fatalf("Failed to init global logger: %v", err)
+		t.Fatalf("Failed to set log file for global logger: %v", err)
 	}
-	defer func() {
-		Close()
-		os.Remove(testFile)
-	}()
+	defer os.Remove(testFile)
 
 	const numGoroutines = 50
 	const logsPerGoroutine = 20
@@ -113,7 +108,8 @@ func TestGlobalLoggerConcurrency(t *testing.T) {
 				case 5:
 					// Test re-initialization during logging
 					if j == 10 {
-						InitWithFile("reinit-test", testFile, FormatTXT)
+						Init("reinit-test")
+						SetLogFile(testFile, FormatTXT)
 					}
 				}
 			}
@@ -138,15 +134,17 @@ func TestConcurrentFileOperations(t *testing.T) {
 			defer wg.Done()
 
 			testFile := "test_concurrent_" + string(rune('0'+loggerID)) + ".log"
-			err := loggers[loggerID].Init("concurrent-logger", testFile, FormatJSON)
+			err := loggers[loggerID].Init("concurrent-logger")
 			if err != nil {
 				t.Errorf("Failed to init logger %d: %v", loggerID, err)
 				return
 			}
-			defer func() {
-				loggers[loggerID].Close()
-				os.Remove(testFile)
-			}()
+			err = loggers[loggerID].SetLogFile(testFile, FormatJSON)
+			if err != nil {
+				t.Errorf("Failed to set log file for logger %d: %v", loggerID, err)
+				return
+			}
+			defer os.Remove(testFile)
 
 			// Write logs
 			for j := 0; j < numLogs; j++ {

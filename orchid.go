@@ -117,6 +117,9 @@ func (l *Logger) writeToFile(msg logMessage) {
 	}
 
 	logFile := config.getLogFile()
+	if logFile == nil {
+		return // No file handle available
+	}
 
 	switch config.GetDefaultFormat() {
 	case FormatTXT:
