@@ -328,8 +328,8 @@ func SetLogFile(filePath string, format FileFormat) error {
 		if strings.Contains(filePath, "\x00") {
 			return fmt.Errorf("file path cannot contain null bytes")
 		}
-		if len(filePath) > 260 {
-			return fmt.Errorf("file path too long (max 260 characters): %d", len(filePath))
+		if len(filePath) > 255 {
+			return fmt.Errorf("file path too long (max 255 characters): %d", len(filePath))
 		}
 	}
 

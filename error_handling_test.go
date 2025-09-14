@@ -82,7 +82,8 @@ func TestSetLogFileValidation(t *testing.T) {
 		{"file path with whitespace", " test.log ", FormatTXT, true, "leading or trailing whitespace"},
 		{"file path with null byte", "test\x00.log", FormatTXT, true, "null bytes"},
 		{"file path too long", strings.Repeat("a", 270), FormatTXT, true, "too long"},
-		{"exactly 260 chars", strings.Repeat("a", 260), FormatTXT, false, ""},
+		{"filename 255 chars", strings.Repeat("a", 255), FormatTXT, false, ""},
+		{"filename 256 chars", strings.Repeat("a", 256), FormatTXT, true, "too long"},
 	}
 
 	for _, tc := range testCases {
