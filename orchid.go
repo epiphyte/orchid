@@ -35,6 +35,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -69,7 +70,9 @@ type logMessage struct {
 // Logger represents a structured logger instance with optional file output.
 // Each Logger instance is associated with a specific module name and can
 // optionally write to a file in addition to console output.
+// Logger is safe for concurrent use by multiple goroutines.
 type Logger struct {
+	mu         sync.Mutex  // Protects all fields and operations
 	module     string      // Module name for this logger instance
 	logFile    *os.File    // Optional file handle for logging to disk
 	fileFormat FileFormat  // Format to use when writing to file
@@ -81,6 +84,9 @@ type Logger struct {
 // If the logger already has a file open, it will be closed before opening the new one.
 // Returns an error if the file cannot be opened for writing.
 func (l *Logger) Init(moduleName, filePath string, format FileFormat) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	// Close existing file if open
 	if l.logFile != nil {
 		l.logFile.Close()
@@ -103,6 +109,9 @@ func (l *Logger) Init(moduleName, filePath string, format FileFormat) error {
 // It's safe to call Close multiple times or on a logger without a file.
 // After calling Close, the logger will only output to console.
 func (l *Logger) Close() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	if l.logFile != nil {
 		err := l.logFile.Close()
 		l.logFile = nil
@@ -175,6 +184,9 @@ func (l *Logger) printLogMessage(msg logMessage) {
 
 // log is the internal method that handles logging for all severity levels.
 func (l *Logger) log(severity string, a ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	msg := l.createLogMessage(severity, a...)
 	l.printLogMessage(msg)
 }
@@ -209,17 +221,24 @@ func (l *Logger) Debug(a ...interface{}) {
 	l.log("DEBUG", a...)
 }
 
-var defaultLogger Logger
+var (
+	defaultLogger Logger
+	defaultMu     sync.Mutex // Protects defaultLogger initialization
+)
 
 // Init initializes the default logger with console-only output.
 // This is a convenience function for simple logging without file output.
 func Init(moduleName string) {
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
 	defaultLogger.Init(moduleName, "", FormatTXT)
 }
 
 // InitWithFile initializes the default logger with both console and file output.
 // Returns an error if the file cannot be opened for writing.
 func InitWithFile(moduleName, filePath string, format FileFormat) error {
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
 	return defaultLogger.Init(moduleName, filePath, format)
 }
 
@@ -256,5 +275,7 @@ func Debug(a ...interface{}) {
 // Close closes the default logger's file if it's open and cleans up resources.
 // This should be called before program termination to ensure proper cleanup.
 func Close() error {
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
 	return defaultLogger.Close()
 }
