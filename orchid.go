@@ -38,8 +38,8 @@ type Logger struct {
 	fileFormat FileFormat
 }
 
-func (l *Logger) Init(module_name, filePath string, format FileFormat) error {
-	l.module = module_name
+func (l *Logger) Init(moduleName, filePath string, format FileFormat) error {
+	l.module = moduleName
 	l.fileFormat = format
 	if filePath != "" {
 		var err error
@@ -141,12 +141,12 @@ func (l *Logger) Debug(a ...interface{}) {
 
 var defaultLogger Logger
 
-func Init(module_name string) {
-	defaultLogger.Init(module_name, "", FormatTXT)
+func Init(moduleName string) {
+	defaultLogger.Init(moduleName, "", FormatTXT)
 }
 
-func InitWithFile(module_name, filePath string, format FileFormat) error {
-	return defaultLogger.Init(module_name, filePath, format)
+func InitWithFile(moduleName, filePath string, format FileFormat) error {
+	return defaultLogger.Init(moduleName, filePath, format)
 }
 
 func Info(a ...interface{}) {
