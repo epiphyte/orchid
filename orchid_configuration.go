@@ -42,10 +42,24 @@ func (c *Configuration) getLogFile() *os.File {
 
 // SetDefaultFile sets the default file path for all new loggers.
 // Pass empty string to disable file logging by default.
+// If a file is already open, it will be closed before opening the new one.
 func (c *Configuration) SetDefaultFile(filePath string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	// Close existing file handle if open
+	if c.logFile != nil {
+		c.logFile.Close()
+		c.logFile = nil
+	}
+
 	c.defaultFile = filePath
+
+	// If filePath is empty, disable file logging
+	if filePath == "" {
+		return nil
+	}
+
 	var err error
 	c.logFile, err = os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -90,12 +104,37 @@ func (c *Configuration) GetEnableColors() bool {
 	return c.enableColors
 }
 
-// Reset resets all configuration values to their defaults.
+// Close closes any open file handles and cleans up resources.
+// After calling Close, the configuration can still be used but file logging
+// will be disabled until SetDefaultFile is called again.
+func (c *Configuration) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.logFile != nil {
+		err := c.logFile.Close()
+		c.logFile = nil
+		c.defaultFile = ""
+		if err != nil {
+			return fmt.Errorf("failed to close log file: %v", err)
+		}
+	}
+	return nil
+}
+
+// Reset resets all configuration values to their defaults and closes any open files.
 // This is primarily useful for testing.
 func (c *Configuration) Reset() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.defaultFile = "app.log"
+
+	// Close existing file handle if open
+	if c.logFile != nil {
+		c.logFile.Close()
+		c.logFile = nil
+	}
+
+	c.defaultFile = ""
 	c.defaultFormat = FormatTXT
 	c.enableColors = true
 }

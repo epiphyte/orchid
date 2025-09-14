@@ -94,6 +94,74 @@ func TestGlobalLoggerFileOperations(t *testing.T) {
 		t.Error("Global log file was not created")
 	}
 
+	// Test proper cleanup
+	err = Close()
+	if err != nil {
+		t.Errorf("Error closing global logger: %v", err)
+	}
+
 	// Clean up test file
 	os.Remove(testFile)
+}
+
+func TestConfigurationClose(t *testing.T) {
+	config := GetConfiguration()
+	testFile := "test_config_close.log"
+
+	// Set a file
+	err := config.SetDefaultFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to set default file: %v", err)
+	}
+
+	// Verify file was created
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Error("Log file was not created by configuration")
+	}
+
+	// Close should clean up the file handle
+	err = config.Close()
+	if err != nil {
+		t.Errorf("Error closing configuration: %v", err)
+	}
+
+	// Verify configuration was reset
+	if config.GetDefaultFile() != "" {
+		t.Error("Default file should be empty after Close()")
+	}
+
+	// Clean up test file
+	os.Remove(testFile)
+}
+
+func TestMultipleFileSetOperations(t *testing.T) {
+	config := GetConfiguration()
+	config.Reset() // Start clean
+
+	testFile1 := "test_multiple_1.log"
+	testFile2 := "test_multiple_2.log"
+
+	// Set first file
+	err := config.SetDefaultFile(testFile1)
+	if err != nil {
+		t.Fatalf("Failed to set first file: %v", err)
+	}
+
+	// Set second file (should close first)
+	err = config.SetDefaultFile(testFile2)
+	if err != nil {
+		t.Fatalf("Failed to set second file: %v", err)
+	}
+
+	// Verify second file is active
+	if config.GetDefaultFile() != testFile2 {
+		t.Errorf("Expected %s, got %s", testFile2, config.GetDefaultFile())
+	}
+
+	// Close configuration
+	config.Close()
+
+	// Clean up test files
+	os.Remove(testFile1)
+	os.Remove(testFile2)
 }

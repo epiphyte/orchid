@@ -39,6 +39,10 @@
 //	config.SetEnableColors(false) // Disable color output
 //	config.SetDefaultFile("global.log")
 //	config.SetDefaultFormat(orchid.FormatJSON)
+//
+// For proper resource cleanup, especially when using file logging:
+//
+//	defer orchid.Close() // Clean up file handles before program exit
 package orchid
 
 import (
@@ -277,4 +281,11 @@ func Debug(a ...interface{}) {
 // SetLogFile sets the log file and format for the default logger.
 func SetLogFile(filePath string, format FileFormat) error {
 	return defaultLogger.SetLogFile(filePath, format)
+}
+
+// Close closes any open file handles in the global configuration.
+// This should be called before program exit to ensure proper cleanup.
+func Close() error {
+	config := GetConfiguration()
+	return config.Close()
 }
