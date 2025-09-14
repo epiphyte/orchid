@@ -1,4 +1,4 @@
-# Orchid Logger
+# Orchid Logger [![Go Reference](https://pkg.go.dev/badge/github.com/epiphyte/orchid.svg)](https://pkg.go.dev/github.com/epiphyte/orchid)
 
 Orchid is a go library for printing pretty logs. It is currently under heavy development.
 
