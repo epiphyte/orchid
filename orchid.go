@@ -16,7 +16,6 @@
 //	if err != nil {
 //		log.Fatal(err)
 //	}
-//	defer orchid.Close() // Important: clean up resources
 //	orchid.Info("This will be logged to both console and file")
 //
 // Usage with custom logger instances:
@@ -34,7 +33,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"sync"
 	"time"
 )
@@ -72,10 +70,8 @@ type logMessage struct {
 // optionally write to a file in addition to console output.
 // Logger is safe for concurrent use by multiple goroutines.
 type Logger struct {
-	mu         sync.Mutex // Protects all fields and operations
-	module     string     // Module name for this logger instance
-	logFile    *os.File   // Optional file handle for logging to disk
-	fileFormat FileFormat // Format to use when writing to file
+	mu     sync.Mutex // Protects all fields and operations
+	module string     // Module name for this logger instance
 }
 
 // Init initializes the Logger with a module name, optional file path, and file format.
@@ -83,40 +79,11 @@ type Logger struct {
 // If filePath is provided, logs will be written to both console and file.
 // If the logger already has a file open, it will be closed before opening the new one.
 // Returns an error if the file cannot be opened for writing.
-func (l *Logger) Init(moduleName, filePath string, format FileFormat) error {
+func (l *Logger) Init(moduleName string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-
-	// Close existing file if open
-	if l.logFile != nil {
-		l.logFile.Close()
-		l.logFile = nil
-	}
-
 	l.module = moduleName
-	l.fileFormat = format
-	if filePath != "" {
-		var err error
-		l.logFile, err = os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-		if err != nil {
-			return fmt.Errorf("failed to open log file: %v", err)
-		}
-	}
-	return nil
-}
 
-// Close closes the log file if it's open and cleans up resources.
-// It's safe to call Close multiple times or on a logger without a file.
-// After calling Close, the logger will only output to console.
-func (l *Logger) Close() error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if l.logFile != nil {
-		err := l.logFile.Close()
-		l.logFile = nil
-		return err
-	}
 	return nil
 }
 
@@ -132,21 +99,28 @@ func (l *Logger) createLogMessage(severity string, a ...interface{}) logMessage 
 
 // writeToFile writes a log message to the file in the specified format.
 func (l *Logger) writeToFile(msg logMessage) {
-	switch l.fileFormat {
+	config := GetConfiguration()
+	if config.GetDefaultFile() == "" {
+		return // No file configured
+	}
+
+	logFile := config.getLogFile()
+
+	switch config.GetDefaultFormat() {
 	case FormatTXT:
 		txtMessage := fmt.Sprintf("%s [%s] %s: %s",
 			msg.Time.Format("2006-01-02 15:04:05"),
 			msg.Severity,
 			msg.Module,
 			msg.Text)
-		fmt.Fprintln(l.logFile, txtMessage)
+		fmt.Fprintln(logFile, txtMessage)
 	case FormatJSON:
 		jsonData, err := json.Marshal(msg)
 		if err != nil {
-			fmt.Fprintf(l.logFile, "Error marshaling log message to JSON: %v\n", err)
+			fmt.Fprintf(logFile, "Error marshaling log message to JSON: %v\n", err)
 			return
 		}
-		fmt.Fprintln(l.logFile, string(jsonData))
+		fmt.Fprintln(logFile, string(jsonData))
 	}
 }
 
@@ -154,32 +128,53 @@ func (l *Logger) writeToFile(msg logMessage) {
 // FATAL messages will call log.Fatal() which exits the program.
 func (l *Logger) printLogMessage(msg logMessage) {
 	metadata := fmt.Sprintf("%-20s %-6s", msg.Module, msg.Severity)
-	color := COLOR_INFO
-	switch msg.Severity {
-	case "INFO":
-		color = COLOR_INFO
-	case "OK":
-		color = COLOR_OK
-	case "WARN":
-		color = COLOR_WARN
-	case "ERROR":
-		color = COLOR_ERROR
-	case "FATAL":
-		color = COLOR_FATAL
-	case "DEBUG":
-		color = COLOR_DEBUG
-	}
-	consoleMessage := fmt.Sprintf("%s %s %s %s %s", COLOR_RESET, color, metadata, COLOR_RESET, msg.Text)
 
-	if l.logFile != nil {
-		l.writeToFile(msg)
+	config := GetConfiguration()
+	var consoleMessage string
+
+	if config.GetEnableColors() {
+		color := COLOR_INFO
+		switch msg.Severity {
+		case "INFO":
+			color = COLOR_INFO
+		case "OK":
+			color = COLOR_OK
+		case "WARN":
+			color = COLOR_WARN
+		case "ERROR":
+			color = COLOR_ERROR
+		case "FATAL":
+			color = COLOR_FATAL
+		case "DEBUG":
+			color = COLOR_DEBUG
+		}
+		consoleMessage = fmt.Sprintf("%s %s %s %s %s", COLOR_RESET, color, metadata, COLOR_RESET, msg.Text)
+	} else {
+		// No colors - just plain text
+		consoleMessage = fmt.Sprintf("%s %s", metadata, msg.Text)
 	}
+
+	l.writeToFile(msg)
 
 	if msg.Severity == "FATAL" {
 		log.Fatal(consoleMessage)
 	} else {
 		log.Println(consoleMessage)
 	}
+}
+
+func (l *Logger) SetLogFile(filePath string, format FileFormat) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	config := GetConfiguration()
+	err := config.SetDefaultFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to set log file: %v", err)
+	}
+	config.SetDefaultFormat(format)
+
+	return nil
 }
 
 // log is the internal method that handles logging for all severity levels.
@@ -231,15 +226,7 @@ var (
 func Init(moduleName string) {
 	defaultMu.Lock()
 	defer defaultMu.Unlock()
-	defaultLogger.Init(moduleName, "", FormatTXT)
-}
-
-// InitWithFile initializes the default logger with both console and file output.
-// Returns an error if the file cannot be opened for writing.
-func InitWithFile(moduleName, filePath string, format FileFormat) error {
-	defaultMu.Lock()
-	defer defaultMu.Unlock()
-	return defaultLogger.Init(moduleName, filePath, format)
+	defaultLogger.Init(moduleName)
 }
 
 // Info logs a message at INFO level using the default logger.
@@ -272,10 +259,7 @@ func Debug(a ...interface{}) {
 	defaultLogger.log("DEBUG", a...)
 }
 
-// Close closes the default logger's file if it's open and cleans up resources.
-// This should be called before program termination to ensure proper cleanup.
-func Close() error {
-	defaultMu.Lock()
-	defer defaultMu.Unlock()
-	return defaultLogger.Close()
+// SetLogFile sets the log file and format for the default logger.
+func SetLogFile(filePath string, format FileFormat) error {
+	return defaultLogger.SetLogFile(filePath, format)
 }
