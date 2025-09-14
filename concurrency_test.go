@@ -60,7 +60,7 @@ func TestConcurrentInitAndClose(t *testing.T) {
 			testFile := "test_init_close.log"
 			logger.Init("test", testFile, FormatTXT)
 			time.Sleep(time.Millisecond) // Small delay to allow some logging
-			os.Remove(testFile) // Clean up
+			os.Remove(testFile)          // Clean up
 		}(i)
 
 		// Goroutine doing Close

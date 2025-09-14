@@ -41,7 +41,7 @@ import (
 
 // ANSI color codes for different log levels
 const (
-	COLOR_RESET = "\033[0m"      // Reset color
+	COLOR_RESET = "\033[0m"       // Reset color
 	COLOR_INFO  = "\033[48;5;33m" // Blue background for INFO
 	COLOR_OK    = "\033[48;5;36m" // Cyan background for OK
 	COLOR_WARN  = "\033[48;5;3m"  // Yellow background for WARN
@@ -72,10 +72,10 @@ type logMessage struct {
 // optionally write to a file in addition to console output.
 // Logger is safe for concurrent use by multiple goroutines.
 type Logger struct {
-	mu         sync.Mutex  // Protects all fields and operations
-	module     string      // Module name for this logger instance
-	logFile    *os.File    // Optional file handle for logging to disk
-	fileFormat FileFormat  // Format to use when writing to file
+	mu         sync.Mutex // Protects all fields and operations
+	module     string     // Module name for this logger instance
+	logFile    *os.File   // Optional file handle for logging to disk
+	fileFormat FileFormat // Format to use when writing to file
 }
 
 // Init initializes the Logger with a module name, optional file path, and file format.
@@ -134,10 +134,10 @@ func (l *Logger) createLogMessage(severity string, a ...interface{}) logMessage 
 func (l *Logger) writeToFile(msg logMessage) {
 	switch l.fileFormat {
 	case FormatTXT:
-		txtMessage := fmt.Sprintf("%s [%s] %s: %s", 
-			msg.Time.Format("2006-01-02 15:04:05"), 
-			msg.Severity, 
-			msg.Module, 
+		txtMessage := fmt.Sprintf("%s [%s] %s: %s",
+			msg.Time.Format("2006-01-02 15:04:05"),
+			msg.Severity,
+			msg.Module,
 			msg.Text)
 		fmt.Fprintln(l.logFile, txtMessage)
 	case FormatJSON:
@@ -170,11 +170,11 @@ func (l *Logger) printLogMessage(msg logMessage) {
 		color = COLOR_DEBUG
 	}
 	consoleMessage := fmt.Sprintf("%s %s %s %s %s", COLOR_RESET, color, metadata, COLOR_RESET, msg.Text)
-	
+
 	if l.logFile != nil {
 		l.writeToFile(msg)
 	}
-	
+
 	if msg.Severity == "FATAL" {
 		log.Fatal(consoleMessage)
 	} else {
