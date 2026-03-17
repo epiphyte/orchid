@@ -286,7 +286,13 @@ func OK(a ...interface{}) {
 func Error(a ...interface{}) {
 	defaultMu.Lock()
 	defer defaultMu.Unlock()
-	defaultLogger.log("ERROR", a...)
+
+	strArgs := make([]interface{}, len(a))
+	for i, arg := range a {
+		strArgs[i] = fmt.Sprint(arg)
+	}
+
+	defaultLogger.log("ERROR", fmt.Sprint(strArgs...))
 }
 
 // Fatal logs a message at FATAL level using the default logger and exits the program.
