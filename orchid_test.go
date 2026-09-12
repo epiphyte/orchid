@@ -44,7 +44,7 @@ func TestAllLogLevels(t *testing.T) {
 	}
 
 	testCases := []struct {
-		method   func(...interface{})
+		method   func(...any)
 		expected string
 		color    string
 	}{
@@ -207,7 +207,7 @@ func TestJSONFileFormat(t *testing.T) {
 		t.Fatalf("Expected 1 line, got %d: %v", len(lines), lines)
 	}
 
-	var raw map[string]interface{}
+	var raw map[string]any
 	if err := json.Unmarshal([]byte(lines[0]), &raw); err != nil {
 		t.Fatalf("Line is not valid JSON: %v\n%s", err, lines[0])
 	}

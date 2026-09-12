@@ -131,7 +131,7 @@ func (l *Logger) Init(moduleName string) error {
 }
 
 // createLogMessage creates a logMessage struct with the given severity and message.
-func (l *Logger) createLogMessage(severity string, a ...interface{}) logMessage {
+func (l *Logger) createLogMessage(severity string, a ...any) logMessage {
 	return logMessage{
 		Severity: severity,
 		Text:     fmt.Sprint(a...),
@@ -202,7 +202,7 @@ func (l *Logger) printLogMessage(msg logMessage) {
 }
 
 // log is the internal method that handles logging for all severity levels.
-func (l *Logger) log(severity string, a ...interface{}) {
+func (l *Logger) log(severity string, a ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -211,32 +211,32 @@ func (l *Logger) log(severity string, a ...interface{}) {
 }
 
 // Info logs a message at INFO level with blue background color.
-func (l *Logger) Info(a ...interface{}) {
+func (l *Logger) Info(a ...any) {
 	l.log("INFO", a...)
 }
 
 // OK logs a message at OK level with cyan background color.
-func (l *Logger) OK(a ...interface{}) {
+func (l *Logger) OK(a ...any) {
 	l.log("OK", a...)
 }
 
 // Error logs a message at ERROR level with red background color.
-func (l *Logger) Error(a ...interface{}) {
+func (l *Logger) Error(a ...any) {
 	l.log("ERROR", a...)
 }
 
 // Fatal logs a message at FATAL level with red background color and exits the program.
-func (l *Logger) Fatal(a ...interface{}) {
+func (l *Logger) Fatal(a ...any) {
 	l.log("FATAL", a...)
 }
 
 // Warn logs a message at WARN level with yellow background color.
-func (l *Logger) Warn(a ...interface{}) {
+func (l *Logger) Warn(a ...any) {
 	l.log("WARN", a...)
 }
 
 // Debug logs a message at DEBUG level with magenta background color.
-func (l *Logger) Debug(a ...interface{}) {
+func (l *Logger) Debug(a ...any) {
 	l.log("DEBUG", a...)
 }
 
@@ -244,40 +244,41 @@ func (l *Logger) Debug(a ...interface{}) {
 // serializes Init and log calls; file access is guarded by Configuration.
 var defaultLogger Logger
 
-// Init initializes the default logger with console-only output.
-// This is a convenience function for simple logging without file output.
+// Init initializes the default logger with a module name.
+// The default logger writes to the console and, like every Logger, to the
+// global log file when one is configured via SetLogFile.
 // Returns an error if the module name is invalid.
 func Init(moduleName string) error {
 	return defaultLogger.Init(moduleName)
 }
 
 // Info logs a message at INFO level using the default logger.
-func Info(a ...interface{}) {
+func Info(a ...any) {
 	defaultLogger.log("INFO", a...)
 }
 
 // OK logs a message at OK level using the default logger.
-func OK(a ...interface{}) {
+func OK(a ...any) {
 	defaultLogger.log("OK", a...)
 }
 
 // Error logs a message at ERROR level using the default logger.
-func Error(a ...interface{}) {
+func Error(a ...any) {
 	defaultLogger.log("ERROR", a...)
 }
 
 // Fatal logs a message at FATAL level using the default logger and exits the program.
-func Fatal(a ...interface{}) {
+func Fatal(a ...any) {
 	defaultLogger.log("FATAL", a...)
 }
 
 // Warn logs a message at WARN level using the default logger.
-func Warn(a ...interface{}) {
+func Warn(a ...any) {
 	defaultLogger.log("WARN", a...)
 }
 
 // Debug logs a message at DEBUG level using the default logger.
-func Debug(a ...interface{}) {
+func Debug(a ...any) {
 	defaultLogger.log("DEBUG", a...)
 }
 

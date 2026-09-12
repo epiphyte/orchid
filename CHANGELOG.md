@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [1.0.1] - 2026-09-12
+
+### Changed
+
+- Variadic log arguments are declared as `...any` instead of
+  `...interface{}`. The types are identical, so callers are unaffected.
+- The package-level `Init` doc comment no longer describes the default
+  logger as console-only; it writes to the global log file like every
+  other logger.
+
 ## [1.0.0] - 2026-09-12
 
 First stable release. From this version on, the public API of the `orchid`
@@ -83,6 +95,8 @@ a new major version.
 - JSON file output, example program, per-module `Logger` instances,
   and the initial colorized console logger.
 
+[Unreleased]: https://github.com/epiphyte/orchid/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/epiphyte/orchid/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/epiphyte/orchid/compare/v0.4.1...v1.0.0
 [0.4.1]: https://github.com/epiphyte/orchid/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/epiphyte/orchid/compare/v0.3.0...v0.4.0
