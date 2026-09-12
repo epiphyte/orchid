@@ -59,7 +59,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -134,42 +133,24 @@ func (l *Logger) createLogMessage(severity string, a ...interface{}) logMessage 
 	}
 }
 
-// writeToFile writes a log message to the file in the specified format.
-// Returns an error if the write operation fails.
-func (l *Logger) writeToFile(msg logMessage) error {
-	config := GetConfiguration()
-	if config.GetDefaultFile() == "" {
-		return nil // No file configured - not an error
-	}
-
-	logFile := config.getLogFile()
-	if logFile == nil {
-		return fmt.Errorf("log file configured but file handle is not available")
-	}
-
-	switch config.GetDefaultFormat() {
+// formatFileLine renders a log message as a single line in the given file format.
+func formatFileLine(msg logMessage, format FileFormat) (string, error) {
+	switch format {
 	case FormatTXT:
-		txtMessage := fmt.Sprintf("%s [%s] %s: %s",
+		return fmt.Sprintf("%s [%s] %s: %s",
 			msg.Time.Format("2006-01-02 15:04:05"),
 			msg.Severity,
 			msg.Module,
-			msg.Text)
-		if _, err := fmt.Fprintln(logFile, txtMessage); err != nil {
-			return fmt.Errorf("failed to write text log to file: %w", err)
-		}
+			msg.Text), nil
 	case FormatJSON:
 		jsonData, err := json.Marshal(msg)
 		if err != nil {
-			return fmt.Errorf("failed to marshal log message to JSON: %w", err)
+			return "", fmt.Errorf("failed to marshal log message to JSON: %w", err)
 		}
-		if _, err := fmt.Fprintln(logFile, string(jsonData)); err != nil {
-			return fmt.Errorf("failed to write JSON log to file: %w", err)
-		}
+		return string(jsonData), nil
 	default:
-		return fmt.Errorf("unsupported log format: %d", config.GetDefaultFormat())
+		return "", fmt.Errorf("unsupported log format: %d", format)
 	}
-
-	return nil
 }
 
 // printLogMessage outputs a log message to the console with colors and optionally to file.
@@ -202,11 +183,9 @@ func (l *Logger) printLogMessage(msg logMessage) {
 		consoleMessage = fmt.Sprintf("%s %s", metadata, msg.Text)
 	}
 
-	// Attempt to write to file, but don't let file errors prevent console logging
-	if err := l.writeToFile(msg); err != nil {
-		// Log file write errors to stderr without breaking the logging flow
-		fmt.Fprintf(os.Stderr, "ORCHID FILE ERROR: %v\n", err)
-	}
+	// File write errors are reported by the configuration and never
+	// prevent console logging.
+	config.write(msg)
 
 	if msg.Severity == "FATAL" {
 		log.Fatal(consoleMessage)

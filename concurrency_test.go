@@ -1,35 +1,27 @@
 package orchid
 
 import (
-	"os"
+	"encoding/json"
 	"sync"
 	"testing"
-	"time"
 )
 
 func TestConcurrentLogging(t *testing.T) {
-	var logger Logger
-	testFile := "test_concurrent.log"
+	silenceLogOutput(t)
+	path := tempLogPath(t, "concurrent.log")
 
-	// Initialize logger
-	err := logger.Init("concurrent-test")
-	if err != nil {
+	var logger Logger
+	if err := logger.Init("concurrent-test"); err != nil {
 		t.Fatalf("Failed to init logger: %v", err)
 	}
-
-	// Set up global file logging
-	err = SetLogFile(testFile, FormatTXT)
-	if err != nil {
+	if err := SetLogFile(path, FormatTXT); err != nil {
 		t.Fatalf("Failed to set log file: %v", err)
 	}
-	defer os.Remove(testFile)
 
 	const numGoroutines = 100
 	const logsPerGoroutine = 50
-
 	var wg sync.WaitGroup
 
-	// Start multiple goroutines writing logs concurrently
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
 		go func(id int) {
@@ -41,58 +33,65 @@ func TestConcurrentLogging(t *testing.T) {
 			}
 		}(i)
 	}
-
 	wg.Wait()
 
-	// Test passed if no race conditions occurred
-	t.Log("Concurrent logging completed successfully")
+	lines := closeAndReadLines(t, path)
+	want := numGoroutines * logsPerGoroutine * 3
+	if len(lines) != want {
+		t.Errorf("Expected %d lines in log file, got %d", want, len(lines))
+	}
 }
 
-func TestConcurrentInit(t *testing.T) {
+func TestConcurrentInitAndLog(t *testing.T) {
+	silenceLogOutput(t)
+
 	var logger Logger
+	if err := logger.Init("initial"); err != nil {
+		t.Fatalf("Failed to init logger: %v", err)
+	}
+
 	const numOperations = 50
 	var wg sync.WaitGroup
 
-	// Test concurrent Init operations
+	// Init and log calls interleave on the same instance.
 	for i := 0; i < numOperations; i++ {
-		wg.Add(1)
-
-		// Goroutine doing Init
-		go func(id int) {
+		wg.Add(2)
+		go func() {
 			defer wg.Done()
-			err := logger.Init("test")
-			if err != nil {
+			if err := logger.Init("test"); err != nil {
 				t.Errorf("Init failed: %v", err)
 			}
-			time.Sleep(time.Millisecond) // Small delay to allow some logging
+		}()
+		go func(id int) {
+			defer wg.Done()
+			logger.Info("logging during init", id)
 		}(i)
 	}
-
 	wg.Wait()
-	t.Log("Concurrent Init completed successfully")
 }
 
 func TestGlobalLoggerConcurrency(t *testing.T) {
-	testFile := "test_global_concurrent.log"
+	silenceLogOutput(t)
+	path := tempLogPath(t, "global_concurrent.log")
 
-	// Initialize global logger
-	Init("global-concurrent-test")
-	err := SetLogFile(testFile, FormatJSON)
-	if err != nil {
-		t.Fatalf("Failed to set log file for global logger: %v", err)
+	if err := Init("global-concurrent-test"); err != nil {
+		t.Fatalf("Failed to init global logger: %v", err)
 	}
-	defer os.Remove(testFile)
+	if err := SetLogFile(path, FormatJSON); err != nil {
+		t.Fatalf("Failed to set log file: %v", err)
+	}
 
 	const numGoroutines = 50
 	const logsPerGoroutine = 20
-
 	var wg sync.WaitGroup
+	var logged int64
+	var loggedMu sync.Mutex
 
-	// Test all log levels concurrently using global functions
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
+			count := 0
 			for j := 0; j < logsPerGoroutine; j++ {
 				switch j % 6 {
 				case 0:
@@ -106,56 +105,80 @@ func TestGlobalLoggerConcurrency(t *testing.T) {
 				case 4:
 					Debug("Global goroutine", id, "debug", j)
 				case 5:
-					// Test re-initialization during logging
-					if j == 10 {
+					// Re-initialize and re-open the same file mid-run.
+					if j == 11 {
 						Init("reinit-test")
-						SetLogFile(testFile, FormatTXT)
+						SetLogFile(path, FormatTXT)
 					}
+					continue
 				}
+				count++
 			}
+			loggedMu.Lock()
+			logged += int64(count)
+			loggedMu.Unlock()
 		}(i)
 	}
-
 	wg.Wait()
-	t.Log("Global logger concurrency test completed successfully")
+
+	lines := closeAndReadLines(t, path)
+	if int64(len(lines)) != logged {
+		t.Errorf("Expected %d lines in log file, got %d", logged, len(lines))
+	}
 }
 
 func TestConcurrentMultipleLoggers(t *testing.T) {
+	silenceLogOutput(t)
+	path := tempLogPath(t, "concurrent_shared.log")
+
 	const numLoggers = 10
 	const numLogs = 20
-	testFile := "test_concurrent_shared.log"
 
 	var loggers [numLoggers]Logger
 	var wg sync.WaitGroup
 
-	// Set global file that all loggers will use
-	err := SetLogFile(testFile, FormatJSON)
-	if err != nil {
+	if err := SetLogFile(path, FormatJSON); err != nil {
 		t.Fatalf("Failed to set global log file: %v", err)
 	}
-	defer os.Remove(testFile)
 
-	// Start multiple loggers writing to the same global file concurrently
 	for i := 0; i < numLoggers; i++ {
 		wg.Add(1)
 		go func(loggerID int) {
 			defer wg.Done()
 
 			moduleName := "logger-" + string(rune('0'+loggerID))
-			err := loggers[loggerID].Init(moduleName)
-			if err != nil {
+			if err := loggers[loggerID].Init(moduleName); err != nil {
 				t.Errorf("Failed to init logger %d: %v", loggerID, err)
 				return
 			}
-
-			// Write logs - all loggers write to the same global file
 			for j := 0; j < numLogs; j++ {
 				loggers[loggerID].Info("Logger", loggerID, "message", j)
 				loggers[loggerID].Error("Logger", loggerID, "error", j)
 			}
 		}(i)
 	}
-
 	wg.Wait()
-	t.Log("Concurrent multiple loggers completed successfully")
+
+	lines := closeAndReadLines(t, path)
+	want := numLoggers * numLogs * 2
+	if len(lines) != want {
+		t.Fatalf("Expected %d lines in log file, got %d", want, len(lines))
+	}
+
+	perModule := map[string]int{}
+	for _, line := range lines {
+		var entry struct{ Module, Severity string }
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("Interleaved write produced invalid JSON: %v\n%s", err, line)
+		}
+		perModule[entry.Module]++
+	}
+	if len(perModule) != numLoggers {
+		t.Errorf("Expected %d distinct modules, got %d: %v", numLoggers, len(perModule), perModule)
+	}
+	for module, n := range perModule {
+		if n != numLogs*2 {
+			t.Errorf("Module %s wrote %d lines, expected %d", module, n, numLogs*2)
+		}
+	}
 }

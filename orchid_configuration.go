@@ -1,7 +1,9 @@
 package orchid
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 )
@@ -9,11 +11,13 @@ import (
 // Configuration holds global configuration settings for the orchid logger.
 // This singleton manages default file path, format, and other global settings.
 type Configuration struct {
-	mu            sync.RWMutex // Protects configuration fields
-	defaultFile   string       // Default file path for logging
-	defaultFormat FileFormat   // Default format for file logging
-	enableColors  bool         // Enable/disable color output
-	logFile       *os.File     // Shared log file instance
+	mu                sync.RWMutex // Protects configuration fields
+	defaultFile       string       // Default file path for logging
+	defaultFormat     FileFormat   // Default format for file logging
+	enableColors      bool         // Enable/disable color output
+	logFile           *os.File     // Shared log file instance
+	errOut            io.Writer    // Destination for file-logging error reports
+	fileErrorReported bool         // True once a file error has been reported for the current failure episode
 }
 
 var (
@@ -26,9 +30,10 @@ var (
 func GetConfiguration() *Configuration {
 	configOnce.Do(func() {
 		configInstance = &Configuration{
-			defaultFile:   "",         // No default file - console only
-			defaultFormat: FormatTXT,  // Default to text format
-			enableColors:  true,       // Colors enabled by default
+			defaultFile:   "",        // No default file - console only
+			defaultFormat: FormatTXT, // Default to text format
+			enableColors:  true,      // Colors enabled by default
+			errOut:        os.Stderr,
 		}
 	})
 	return configInstance
@@ -40,31 +45,37 @@ func (c *Configuration) getLogFile() *os.File {
 	return c.logFile
 }
 
-// SetDefaultFile sets the default file path for all new loggers.
-// Pass empty string to disable file logging by default.
-// If a file is already open, it will be closed before opening the new one.
+// setErrorOutput redirects file-logging error reports. Used by tests.
+func (c *Configuration) setErrorOutput(w io.Writer) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.errOut = w
+}
+
+// SetDefaultFile sets the default file path for all loggers.
+// Pass empty string to disable file logging.
+// The new file is opened before the previous one is closed, so if the new
+// file cannot be opened the previous configuration is left untouched and
+// an error is returned.
 func (c *Configuration) SetDefaultFile(filePath string) error {
+	var newFile *os.File
+	if filePath != "" {
+		f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open log file: %w", err)
+		}
+		newFile = f
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Close existing file handle if open
 	if c.logFile != nil {
 		c.logFile.Close()
-		c.logFile = nil
 	}
-
+	c.logFile = newFile
 	c.defaultFile = filePath
-
-	// If filePath is empty, disable file logging
-	if filePath == "" {
-		return nil
-	}
-
-	var err error
-	c.logFile, err = os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open log file: %v", err)
-	}
+	c.fileErrorReported = false
 
 	return nil
 }
@@ -104,6 +115,50 @@ func (c *Configuration) GetEnableColors() bool {
 	return c.enableColors
 }
 
+// write formats msg and appends it to the log file, if one is configured.
+// The lock is held for the duration of the write so the file handle cannot
+// be closed or replaced underneath an in-flight write.
+//
+// Write failures never propagate to the caller. The first failure of an
+// episode is reported to the error output; subsequent failures are silent
+// until a write succeeds or the file is reconfigured.
+func (c *Configuration) write(msg logMessage) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.defaultFile == "" {
+		return // No file configured - nothing to do
+	}
+
+	err := c.writeLocked(msg)
+	if err == nil {
+		c.fileErrorReported = false
+		return
+	}
+	if c.fileErrorReported {
+		return
+	}
+	c.fileErrorReported = true
+	fmt.Fprintf(c.errOut, "ORCHID FILE ERROR: %v (further file errors suppressed until a write succeeds or the log file is reconfigured)\n", err)
+}
+
+// writeLocked performs the actual formatting and write. c.mu must be held.
+func (c *Configuration) writeLocked(msg logMessage) error {
+	if c.logFile == nil {
+		return errors.New("log file configured but file handle is not available")
+	}
+
+	line, err := formatFileLine(msg, c.defaultFormat)
+	if err != nil {
+		return err
+	}
+
+	if _, err := fmt.Fprintln(c.logFile, line); err != nil {
+		return fmt.Errorf("failed to write log to file: %w", err)
+	}
+	return nil
+}
+
 // Close closes any open file handles and cleans up resources.
 // After calling Close, the configuration can still be used but file logging
 // will be disabled until SetDefaultFile is called again.
@@ -115,8 +170,9 @@ func (c *Configuration) Close() error {
 		err := c.logFile.Close()
 		c.logFile = nil
 		c.defaultFile = ""
+		c.fileErrorReported = false
 		if err != nil {
-			return fmt.Errorf("failed to close log file: %v", err)
+			return fmt.Errorf("failed to close log file: %w", err)
 		}
 	}
 	return nil
@@ -137,4 +193,6 @@ func (c *Configuration) Reset() {
 	c.defaultFile = ""
 	c.defaultFormat = FormatTXT
 	c.enableColors = true
+	c.errOut = os.Stderr
+	c.fileErrorReported = false
 }

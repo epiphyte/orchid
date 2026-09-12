@@ -2,6 +2,7 @@ package orchid
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -18,7 +19,7 @@ func TestLoggerInitValidation(t *testing.T) {
 		{"valid module name", "test-module", false, ""},
 		{"empty string", "", true, "cannot be empty"},
 		{"whitespace only", "   ", true, "cannot be empty"},
-		{"leading whitespace", " test", false, ""}, // Should trim and succeed
+		{"leading whitespace", " test", false, ""},  // Should trim and succeed
 		{"trailing whitespace", "test ", false, ""}, // Should trim and succeed
 		{"too long", strings.Repeat("a", 60), true, "too long"},
 		{"exactly 50 chars", strings.Repeat("a", 50), false, ""},
@@ -34,10 +35,8 @@ func TestLoggerInitValidation(t *testing.T) {
 				} else if !strings.Contains(err.Error(), tc.errorSubstr) {
 					t.Errorf("Expected error to contain '%s', got: %v", tc.errorSubstr, err)
 				}
-			} else {
-				if err != nil {
-					t.Errorf("Expected no error for module name '%s', got: %v", tc.moduleName, err)
-				}
+			} else if err != nil {
+				t.Errorf("Expected no error for module name '%s', got: %v", tc.moduleName, err)
 			}
 		})
 	}
@@ -68,6 +67,21 @@ func TestGlobalInitValidation(t *testing.T) {
 }
 
 func TestSetLogFileValidation(t *testing.T) {
+	// Some cases use bare file names, so run inside a temporary directory
+	// to keep any created files out of the repository.
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+	dir := t.TempDir()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		GetConfiguration().Reset()
+		os.Chdir(origDir)
+	})
+
 	testCases := []struct {
 		name        string
 		filePath    string
@@ -88,11 +102,7 @@ func TestSetLogFileValidation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Clean up any previous state
-			defer func() {
-				config := GetConfiguration()
-				config.Reset()
-			}()
+			defer GetConfiguration().Reset()
 
 			err := SetLogFile(tc.filePath, tc.format)
 
@@ -102,109 +112,123 @@ func TestSetLogFileValidation(t *testing.T) {
 				} else if !strings.Contains(err.Error(), tc.errorSubstr) {
 					t.Errorf("Expected error to contain '%s', got: %v", tc.errorSubstr, err)
 				}
-			} else {
-				if err != nil {
-					t.Errorf("Expected no error for filePath '%s' and format %d, got: %v", tc.filePath, tc.format, err)
-				}
+			} else if err != nil {
+				t.Errorf("Expected no error for filePath '%s' and format %d, got: %v", tc.filePath, tc.format, err)
 			}
 		})
 	}
 }
 
 func TestFileWriteErrorHandling(t *testing.T) {
-	// Create a test logger
+	resetConfigOnCleanup(t)
+	GetConfiguration().Reset()
+
 	var logger Logger
-	err := logger.Init("file-error-test")
-	if err != nil {
+	if err := logger.Init("file-error-test"); err != nil {
 		t.Fatalf("Failed to init logger: %v", err)
 	}
 
-	// Try to set up logging to a directory that doesn't exist
-	invalidPath := "/nonexistent/directory/test.log"
-	err = SetLogFile(invalidPath, FormatTXT)
-
-	// The SetLogFile should fail when trying to create the file
-	if err == nil {
-		t.Errorf("Expected error when setting invalid file path, but got nil")
-		// Clean up if somehow it worked
-		config := GetConfiguration()
-		config.Reset()
-		os.Remove(invalidPath)
+	invalidPath := filepath.Join(t.TempDir(), "nonexistent", "directory", "test.log")
+	if err := SetLogFile(invalidPath, FormatTXT); err == nil {
+		t.Fatal("Expected error when setting invalid file path, but got nil")
+	}
+	if got := GetConfiguration().GetDefaultFile(); got != "" {
+		t.Errorf("Failed SetLogFile must not leave a file configured, got %q", got)
 	}
 }
 
 func TestFileWriteErrorRecovery(t *testing.T) {
-	// This test verifies that logging continues to work even if file writing fails
-	testFile := "test_error_recovery.log"
+	// Logging continues on the console even if file writing fails.
+	console := captureLogOutput(t)
+	errs := captureFileErrors(t)
+	path := tempLogPath(t, "error_recovery.log")
 
-	// Set up file logging
-	err := SetLogFile(testFile, FormatTXT)
-	if err != nil {
+	if err := SetLogFile(path, FormatTXT); err != nil {
 		t.Fatalf("Failed to set log file: %v", err)
 	}
-
-	defer func() {
-		config := GetConfiguration()
-		config.Reset()
-		os.Remove(testFile)
-	}()
-
-	// Create a logger
 	var logger Logger
-	err = logger.Init("error-recovery-test")
-	if err != nil {
+	if err := logger.Init("error-recovery-test"); err != nil {
+		t.Fatalf("Failed to init logger: %v", err)
+	}
+	logger.Info("This should work normally")
+
+	// Close the handle behind the configuration's back so writes fail.
+	GetConfiguration().getLogFile().Close()
+
+	logger.Info("still logs to console")
+	logger.Error("and so does this")
+
+	out := console.String()
+	if !strings.Contains(out, "still logs to console") || !strings.Contains(out, "and so does this") {
+		t.Errorf("Console output missing messages after file failure: %q", out)
+	}
+	if !strings.Contains(errs.String(), "ORCHID FILE ERROR") {
+		t.Errorf("Expected a file error report, got: %q", errs.String())
+	}
+}
+
+func TestFileErrorReportedOncePerEpisode(t *testing.T) {
+	silenceLogOutput(t)
+	errs := captureFileErrors(t)
+	path := tempLogPath(t, "report_once.log")
+
+	if err := SetLogFile(path, FormatTXT); err != nil {
+		t.Fatalf("Failed to set log file: %v", err)
+	}
+	var logger Logger
+	if err := logger.Init("report-once"); err != nil {
 		t.Fatalf("Failed to init logger: %v", err)
 	}
 
-	// This should work normally and write to file
-	logger.Info("This should work normally")
-
-	// Now close/remove the file to simulate a file error
-	config := GetConfiguration()
-	logFile := config.getLogFile()
-	if logFile != nil {
-		logFile.Close() // This will cause subsequent writes to fail
+	GetConfiguration().getLogFile().Close()
+	for i := 0; i < 10; i++ {
+		logger.Info("failing write", i)
+	}
+	if n := strings.Count(errs.String(), "ORCHID FILE ERROR"); n != 1 {
+		t.Errorf("Expected exactly 1 error report for 10 failed writes, got %d:\n%s", n, errs.String())
 	}
 
-	// This should continue to log to console even though file writing fails
-	// We can't easily test the stderr output, but we can verify it doesn't crash
-	logger.Info("This should still log to console despite file error")
-	logger.Error("Error logging should also continue")
-
-	// Test should complete without panicking
-	t.Log("Error recovery test completed successfully")
+	// Reconfiguring starts a new episode.
+	if err := SetLogFile(path, FormatTXT); err != nil {
+		t.Fatalf("Failed to reset log file: %v", err)
+	}
+	logger.Info("works again")
+	GetConfiguration().getLogFile().Close()
+	logger.Info("fails again")
+	if n := strings.Count(errs.String(), "ORCHID FILE ERROR"); n != 2 {
+		t.Errorf("Expected a second report after reconfiguration, got %d:\n%s", n, errs.String())
+	}
 }
 
 func TestInvalidFormatHandling(t *testing.T) {
+	silenceLogOutput(t)
+	errs := captureFileErrors(t)
+	path := tempLogPath(t, "invalid_format.log")
+
 	var logger Logger
-	err := logger.Init("format-test")
-	if err != nil {
+	if err := logger.Init("format-test"); err != nil {
 		t.Fatalf("Failed to init logger: %v", err)
 	}
 
-	// Set up file with an unusual format by bypassing validation
+	// SetDefaultFormat performs no validation, so an out-of-range value
+	// reaches the writer.
 	config := GetConfiguration()
-	config.mu.Lock()
-	config.defaultFile = "test_invalid_format.log"
-	config.defaultFormat = FileFormat(99) // Invalid format
-
-	// Try to open the file
-	logFile, err := os.OpenFile("test_invalid_format.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		config.mu.Unlock()
-		t.Fatalf("Failed to create test file: %v", err)
+	if err := config.SetDefaultFile(path); err != nil {
+		t.Fatalf("Failed to set file: %v", err)
 	}
-	config.logFile = logFile
-	config.mu.Unlock()
+	config.SetDefaultFormat(FileFormat(99))
 
-	defer func() {
-		config.Reset()
-		os.Remove("test_invalid_format.log")
-	}()
-
-	// This should handle the invalid format gracefully
 	logger.Info("Testing invalid format handling")
+	logger.Info("second attempt")
 
-	// Test should complete without panicking
-	t.Log("Invalid format test completed successfully")
+	if !strings.Contains(errs.String(), "unsupported log format: 99") {
+		t.Errorf("Expected unsupported format error, got: %q", errs.String())
+	}
+	if n := strings.Count(errs.String(), "ORCHID FILE ERROR"); n != 1 {
+		t.Errorf("Expected 1 report, got %d", n)
+	}
+	lines := closeAndReadLines(t, path)
+	if len(lines) != 0 {
+		t.Errorf("Expected nothing written with an invalid format, got: %v", lines)
+	}
 }
