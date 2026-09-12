@@ -1,50 +1,69 @@
 package main
 
 import (
+	"fmt"
+	"os"
+
 	log "github.com/epiphyte/orchid"
 )
 
 func main() {
-	// Initialize the default logger with a module name
-	log.Init("example-app")
-	log.SetLogFile("app.log", log.FormatTXT) // Set default log file and format
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
 
-	// Demonstrate different log levels with console output
+func run() error {
+	// Release the log file handle on exit.
+	defer log.Close()
+
+	// Initialize the default logger with a module name.
+	if err := log.Init("example-app"); err != nil {
+		return err
+	}
+
+	// All loggers share one global log file. Start with plain text.
+	if err := log.SetLogFile("app.log", log.FormatTXT); err != nil {
+		return err
+	}
+
 	log.Info("Application starting up")
 	log.OK("Database connection established")
 	log.Warn("Configuration file not found, using defaults")
 	log.Error("Failed to connect to external API")
 	log.Debug("Processing user request with ID: 12345")
 
-	log.SetLogFile("app.json", log.FormatJSON) // Set default log file and format
+	// Arguments are joined with fmt.Sprint, so add your own spacing.
+	log.Info("User ", "john_doe", " logged in from IP ", "192.168.1.100")
 
-	// Example with multiple arguments
-	log.Info("User", "john_doe", "logged in from IP", "192.168.1.100")
-
-	// Create a custom logger instance for a specific module
+	// A logger instance carries its own module name but writes to the same
+	// global file as the default logger.
 	var dbLogger log.Logger
-	dbLogger.Init("database")
+	if err := dbLogger.Init("database"); err != nil {
+		return err
+	}
 	dbLogger.Info("Database query executed successfully")
 	dbLogger.OK("Transaction committed")
 
-	// Example with file logging in different formats
-	var fileLogger log.Logger
-	err := fileLogger.Init("file-logger")
-	if err != nil {
-		log.Error("Failed to initialize file logger:", err)
-	} else {
-		fileLogger.Info("This message will be written to app.log in text format")
+	// Switching the global file affects every logger from this point on.
+	// Lines are written as one JSON object per line with keys
+	// severity, text, module and time.
+	if err := log.SetLogFile("app.json", log.FormatJSON); err != nil {
+		return err
 	}
 
-	// Example with JSON file logging
-	var jsonLogger log.Logger
-	err = jsonLogger.Init("json-logger")
-	if err != nil {
-		log.Error("Failed to initialize JSON logger:", err)
-	} else {
-		jsonLogger.Info("This message will be written to app.json in JSON format")
-		jsonLogger.OK("JSON logging is working properly")
+	var apiLogger log.Logger
+	if err := apiLogger.Init("api"); err != nil {
+		return err
 	}
+	apiLogger.Info("This line goes to app.json as JSON")
+	dbLogger.Info("So does this one, even though dbLogger was created earlier")
 
-	log.Info("Example completed successfully")
+	// Colors are on by default only when stderr is a terminal and NO_COLOR
+	// is unset. They can be forced either way.
+	log.GetConfiguration().SetEnableColors(false)
+	log.Info("Example completed successfully (printed without colors)")
+
+	return nil
 }

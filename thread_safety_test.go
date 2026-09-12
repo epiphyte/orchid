@@ -191,7 +191,9 @@ func TestConfigurationConcurrency(t *testing.T) {
 			defer wg.Done()
 
 			config.SetEnableColors(goroutineID%2 == 0)
-			config.SetDefaultFormat(FileFormat(goroutineID % 2))
+			if err := config.SetDefaultFormat(FileFormat(goroutineID % 2)); err != nil {
+				t.Errorf("SetDefaultFormat failed: %v", err)
+			}
 
 			_ = config.GetEnableColors()
 			_ = config.GetDefaultFormat()

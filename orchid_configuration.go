@@ -5,7 +5,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
+)
+
+// Limits applied to log file paths by SetDefaultFile and SetLogFile.
+const (
+	maxPathComponentLength = 255  // Per-component limit on common filesystems
+	maxPathLength          = 4096 // Whole-path limit (Linux PATH_MAX)
 )
 
 // Configuration holds global configuration settings for the orchid logger.
@@ -32,11 +40,65 @@ func GetConfiguration() *Configuration {
 		configInstance = &Configuration{
 			defaultFile:   "",        // No default file - console only
 			defaultFormat: FormatTXT, // Default to text format
-			enableColors:  true,      // Colors enabled by default
+			enableColors:  defaultColorsEnabled(),
 			errOut:        os.Stderr,
 		}
 	})
 	return configInstance
+}
+
+// defaultColorsEnabled reports whether color output should be on by default:
+// only when the NO_COLOR environment variable is unset and stderr (the
+// standard log package's default destination) is a terminal.
+func defaultColorsEnabled() bool {
+	if _, set := os.LookupEnv("NO_COLOR"); set {
+		return false
+	}
+	return isTerminal(os.Stderr)
+}
+
+// isTerminal reports whether f refers to a character device such as a TTY.
+func isTerminal(f *os.File) bool {
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
+// validateFilePath checks a log file path. An empty path is valid and
+// means "no file logging".
+func validateFilePath(filePath string) error {
+	if filePath == "" {
+		return nil
+	}
+	if strings.TrimSpace(filePath) != filePath {
+		return errors.New("file path cannot have leading or trailing whitespace")
+	}
+	if strings.Contains(filePath, "\x00") {
+		return errors.New("file path cannot contain null bytes")
+	}
+	if len(filePath) > maxPathLength {
+		return fmt.Errorf("file path too long (max %d bytes): %d", maxPathLength, len(filePath))
+	}
+	for _, component := range strings.FieldsFunc(filePath, isPathSeparator) {
+		if len(component) > maxPathComponentLength {
+			return fmt.Errorf("file path component too long (max %d bytes): %d", maxPathComponentLength, len(component))
+		}
+	}
+	return nil
+}
+
+func isPathSeparator(r rune) bool {
+	return r == '/' || r == filepath.Separator
+}
+
+// validateFormat checks that format is one of the defined FileFormat values.
+func validateFormat(format FileFormat) error {
+	if format < FormatTXT || format > FormatJSON {
+		return fmt.Errorf("invalid log format: %d (must be between %d and %d)", format, FormatTXT, FormatJSON)
+	}
+	return nil
 }
 
 func (c *Configuration) getLogFile() *os.File {
@@ -54,10 +116,14 @@ func (c *Configuration) setErrorOutput(w io.Writer) {
 
 // SetDefaultFile sets the default file path for all loggers.
 // Pass empty string to disable file logging.
-// The new file is opened before the previous one is closed, so if the new
-// file cannot be opened the previous configuration is left untouched and
-// an error is returned.
+// The path is validated and the new file is opened before the previous one
+// is closed, so if the path is invalid or the file cannot be opened the
+// previous configuration is left untouched and an error is returned.
 func (c *Configuration) SetDefaultFile(filePath string) error {
+	if err := validateFilePath(filePath); err != nil {
+		return err
+	}
+
 	var newFile *os.File
 	if filePath != "" {
 		f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -88,10 +154,16 @@ func (c *Configuration) GetDefaultFile() string {
 }
 
 // SetDefaultFormat sets the default format for file logging.
-func (c *Configuration) SetDefaultFormat(format FileFormat) {
+// Returns an error, and leaves the format unchanged, if format is not a
+// defined FileFormat value.
+func (c *Configuration) SetDefaultFormat(format FileFormat) error {
+	if err := validateFormat(format); err != nil {
+		return err
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.defaultFormat = format
+	return nil
 }
 
 // GetDefaultFormat returns the current default file format.
@@ -192,7 +264,7 @@ func (c *Configuration) Reset() {
 
 	c.defaultFile = ""
 	c.defaultFormat = FormatTXT
-	c.enableColors = true
+	c.enableColors = defaultColorsEnabled()
 	c.errOut = os.Stderr
 	c.fileErrorReported = false
 }

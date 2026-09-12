@@ -2,7 +2,7 @@
 //
 // Orchid supports different severity levels (INFO, OK, WARN, ERROR, FATAL, DEBUG)
 // with ANSI color-coded console output and optional file logging in both text
-// and JSON formats. The library uses a global configuration system for managing
+// and JSON formats (one object per line with keys severity, text, module, time). The library uses a global configuration system for managing
 // logging settings including colors, file output, and formatting.
 //
 // Basic usage with the default logger:
@@ -47,8 +47,15 @@
 //
 //	config := orchid.GetConfiguration()
 //	config.SetEnableColors(false) // Disable color output
-//	config.SetDefaultFile("global.log")
-//	config.SetDefaultFormat(orchid.FormatJSON)
+//	if err := config.SetDefaultFile("global.log"); err != nil {
+//		log.Fatal(err)
+//	}
+//	if err := config.SetDefaultFormat(orchid.FormatJSON); err != nil {
+//		log.Fatal(err)
+//	}
+//
+// Colors are enabled by default only when stderr is a terminal and the
+// NO_COLOR environment variable is unset; SetEnableColors overrides this.
 //
 // For proper resource cleanup, especially when using file logging:
 //
@@ -86,10 +93,10 @@ const (
 
 // logMessage represents an internal log message structure.
 type logMessage struct {
-	Severity string    // Log severity level (INFO, ERROR, etc.)
-	Text     string    // Log message text
-	Module   string    // Module name that generated the log
-	Time     time.Time // Timestamp when the log was created
+	Severity string    `json:"severity"` // Log severity level (INFO, ERROR, etc.)
+	Text     string    `json:"text"`     // Log message text
+	Module   string    `json:"module"`   // Module name that generated the log
+	Time     time.Time `json:"time"`     // Timestamp when the log was created
 }
 
 // Logger represents a structured logger instance for a specific module.
@@ -177,7 +184,7 @@ func (l *Logger) printLogMessage(msg logMessage) {
 		case "DEBUG":
 			color = COLOR_DEBUG
 		}
-		consoleMessage = fmt.Sprintf("%s %s %s %s %s", COLOR_RESET, color, metadata, COLOR_RESET, msg.Text)
+		consoleMessage = fmt.Sprintf("%s %s %s %s", color, metadata, COLOR_RESET, msg.Text)
 	} else {
 		// No colors - just plain text
 		consoleMessage = fmt.Sprintf("%s %s", metadata, msg.Text)
@@ -233,96 +240,63 @@ func (l *Logger) Debug(a ...interface{}) {
 	l.log("DEBUG", a...)
 }
 
-var (
-	defaultLogger Logger
-	defaultMu     sync.Mutex // Protects defaultLogger initialization
-)
+// defaultLogger backs the package-level logging functions. Its own mutex
+// serializes Init and log calls; file access is guarded by Configuration.
+var defaultLogger Logger
 
 // Init initializes the default logger with console-only output.
 // This is a convenience function for simple logging without file output.
 // Returns an error if the module name is invalid.
 func Init(moduleName string) error {
-	defaultMu.Lock()
-	defer defaultMu.Unlock()
 	return defaultLogger.Init(moduleName)
 }
 
 // Info logs a message at INFO level using the default logger.
 func Info(a ...interface{}) {
-	defaultMu.Lock()
-	defer defaultMu.Unlock()
 	defaultLogger.log("INFO", a...)
 }
 
 // OK logs a message at OK level using the default logger.
 func OK(a ...interface{}) {
-	defaultMu.Lock()
-	defer defaultMu.Unlock()
 	defaultLogger.log("OK", a...)
 }
 
 // Error logs a message at ERROR level using the default logger.
 func Error(a ...interface{}) {
-	defaultMu.Lock()
-	defer defaultMu.Unlock()
 	defaultLogger.log("ERROR", a...)
 }
 
 // Fatal logs a message at FATAL level using the default logger and exits the program.
 func Fatal(a ...interface{}) {
-	defaultMu.Lock()
-	defer defaultMu.Unlock()
 	defaultLogger.log("FATAL", a...)
 }
 
 // Warn logs a message at WARN level using the default logger.
 func Warn(a ...interface{}) {
-	defaultMu.Lock()
-	defer defaultMu.Unlock()
 	defaultLogger.log("WARN", a...)
 }
 
 // Debug logs a message at DEBUG level using the default logger.
 func Debug(a ...interface{}) {
-	defaultMu.Lock()
-	defer defaultMu.Unlock()
 	defaultLogger.log("DEBUG", a...)
 }
 
 // SetLogFile sets the global log file and format for ALL loggers.
 // This affects both the default logger and all individual Logger instances.
 // All loggers will write to the same file using the specified format.
+// Pass an empty filePath to disable file logging.
+// Validation and file handling are performed by Configuration; on any error
+// the previous file and format remain in effect.
 func SetLogFile(filePath string, format FileFormat) error {
-	// Validate inputs before acquiring lock
-	if format < FormatTXT || format > FormatJSON {
-		return fmt.Errorf("invalid log format: %d (must be between %d and %d)", format, FormatTXT, FormatJSON)
+	if err := validateFormat(format); err != nil {
+		return err
 	}
-
-	// Allow empty filePath to disable file logging
-	if filePath != "" {
-		// Basic file path validation
-		if strings.TrimSpace(filePath) != filePath {
-			return fmt.Errorf("file path cannot have leading or trailing whitespace")
-		}
-		if strings.Contains(filePath, "\x00") {
-			return fmt.Errorf("file path cannot contain null bytes")
-		}
-		if len(filePath) > 255 {
-			return fmt.Errorf("file path too long (max 255 characters): %d", len(filePath))
-		}
-	}
-
-	defaultMu.Lock()
-	defer defaultMu.Unlock()
 
 	config := GetConfiguration()
-	err := config.SetDefaultFile(filePath)
-	if err != nil {
+	if err := config.SetDefaultFile(filePath); err != nil {
 		return fmt.Errorf("failed to set log file: %w", err)
 	}
-	config.SetDefaultFormat(format)
-
-	return nil
+	return config.SetDefaultFormat(format)
 }
 
 // Close closes any open file handles in the global configuration.

@@ -8,6 +8,7 @@ package orchid
 
 import (
 	"encoding/json"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -34,6 +35,8 @@ func TestINFO(t *testing.T) {
 
 func TestAllLogLevels(t *testing.T) {
 	buf := captureLogOutput(t)
+	resetConfigOnCleanup(t)
+	GetConfiguration().SetEnableColors(true) // default depends on the terminal
 
 	var logger Logger
 	if err := logger.Init("TestModule"); err != nil {
@@ -79,6 +82,54 @@ func TestGlobalLogger(t *testing.T) {
 	output := buf.String()
 	if !strings.Contains(output, "INFO") || !strings.Contains(output, "GlobalTest") {
 		t.Errorf("Expected INFO and GlobalTest in output, got: %s", output)
+	}
+}
+
+func TestConsoleFormatWithColors(t *testing.T) {
+	buf := captureLogOutput(t)
+	resetConfigOnCleanup(t)
+	GetConfiguration().SetEnableColors(true)
+
+	var logger Logger
+	if err := logger.Init("colored"); err != nil {
+		t.Fatalf("Failed to init logger: %v", err)
+	}
+	logger.Info("with colors")
+
+	output := buf.String()
+	colorAt := strings.Index(output, COLOR_INFO)
+	resetAt := strings.Index(output, COLOR_RESET)
+	if colorAt < 0 || resetAt < 0 {
+		t.Fatalf("Expected color and reset codes in output, got: %q", output)
+	}
+	if resetAt < colorAt {
+		t.Errorf("Reset code must not precede the color block (stray leading reset), got: %q", output)
+	}
+	if !strings.HasSuffix(strings.TrimSpace(output), COLOR_RESET+" with colors") {
+		t.Errorf("Expected text after reset, got: %q", output)
+	}
+}
+
+func TestDefaultColorsRespectNoColor(t *testing.T) {
+	t.Setenv("NO_COLOR", "") // NO_COLOR is honored when set, whatever its value
+	if defaultColorsEnabled() {
+		t.Error("Expected colors disabled when NO_COLOR is set")
+	}
+
+	os.Unsetenv("NO_COLOR") // t.Setenv restores the original value on cleanup
+	if defaultColorsEnabled() != isTerminal(os.Stderr) {
+		t.Error("Expected color default to follow whether stderr is a terminal")
+	}
+}
+
+func TestIsTerminalRegularFile(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "notatty")
+	if err != nil {
+		t.Fatalf("CreateTemp failed: %v", err)
+	}
+	defer f.Close()
+	if isTerminal(f) {
+		t.Error("A regular file must not be detected as a terminal")
 	}
 }
 
@@ -156,11 +207,24 @@ func TestJSONFileFormat(t *testing.T) {
 		t.Fatalf("Expected 1 line, got %d: %v", len(lines), lines)
 	}
 
+	var raw map[string]interface{}
+	if err := json.Unmarshal([]byte(lines[0]), &raw); err != nil {
+		t.Fatalf("Line is not valid JSON: %v\n%s", err, lines[0])
+	}
+	for _, key := range []string{"severity", "text", "module", "time"} {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("Expected lowercase key %q in JSON line, got keys: %v", key, lines[0])
+		}
+	}
+	if len(raw) != 4 {
+		t.Errorf("Expected exactly 4 keys, got %d: %s", len(raw), lines[0])
+	}
+
 	var entry struct {
-		Severity string
-		Text     string
-		Module   string
-		Time     time.Time
+		Severity string    `json:"severity"`
+		Text     string    `json:"text"`
+		Module   string    `json:"module"`
+		Time     time.Time `json:"time"`
 	}
 	if err := json.Unmarshal([]byte(lines[0]), &entry); err != nil {
 		t.Fatalf("Line is not valid JSON: %v\n%s", err, lines[0])

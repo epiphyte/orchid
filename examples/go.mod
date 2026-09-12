@@ -1,6 +1,6 @@
 module orchid-examples
 
-go 1.16
+go 1.24
 
 replace github.com/epiphyte/orchid => ../
 

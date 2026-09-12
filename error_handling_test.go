@@ -69,18 +69,8 @@ func TestGlobalInitValidation(t *testing.T) {
 func TestSetLogFileValidation(t *testing.T) {
 	// Some cases use bare file names, so run inside a temporary directory
 	// to keep any created files out of the repository.
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd failed: %v", err)
-	}
-	dir := t.TempDir()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("Chdir failed: %v", err)
-	}
-	t.Cleanup(func() {
-		GetConfiguration().Reset()
-		os.Chdir(origDir)
-	})
+	resetConfigOnCleanup(t)
+	t.Chdir(t.TempDir())
 
 	testCases := []struct {
 		name        string
@@ -95,9 +85,10 @@ func TestSetLogFileValidation(t *testing.T) {
 		{"invalid format too high", "test.log", FileFormat(99), true, "invalid log format"},
 		{"file path with whitespace", " test.log ", FormatTXT, true, "leading or trailing whitespace"},
 		{"file path with null byte", "test\x00.log", FormatTXT, true, "null bytes"},
-		{"file path too long", strings.Repeat("a", 270), FormatTXT, true, "too long"},
 		{"filename 255 chars", strings.Repeat("a", 255), FormatTXT, false, ""},
-		{"filename 256 chars", strings.Repeat("a", 256), FormatTXT, true, "too long"},
+		{"filename 256 chars", strings.Repeat("a", 256), FormatTXT, true, "component too long"},
+		{"component 270 chars inside path", "sub/" + strings.Repeat("a", 270), FormatTXT, true, "component too long"},
+		{"whole path over 4096", strings.Repeat("abcdefghij/", 400) + "x.log", FormatTXT, true, "path too long"},
 	}
 
 	for _, tc := range testCases {
@@ -116,6 +107,67 @@ func TestSetLogFileValidation(t *testing.T) {
 				t.Errorf("Expected no error for filePath '%s' and format %d, got: %v", tc.filePath, tc.format, err)
 			}
 		})
+	}
+}
+
+func TestSetLogFileAcceptsLongPathWithShortComponents(t *testing.T) {
+	// A path longer than 255 bytes is valid as long as no single component
+	// exceeds the limit.
+	silenceLogOutput(t)
+	dir := t.TempDir()
+	resetConfigOnCleanup(t)
+	for len(dir) < 300 {
+		dir = filepath.Join(dir, strings.Repeat("d", 40))
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	path := filepath.Join(dir, "deep.log")
+
+	if err := SetLogFile(path, FormatTXT); err != nil {
+		t.Fatalf("Expected long path with short components to be accepted, got: %v", err)
+	}
+	var logger Logger
+	if err := logger.Init("deep"); err != nil {
+		t.Fatalf("Failed to init logger: %v", err)
+	}
+	logger.Info("deep write")
+	if lines := closeAndReadLines(t, path); len(lines) != 1 {
+		t.Errorf("Expected 1 line, got %v", lines)
+	}
+}
+
+func TestConfigurationSettersValidate(t *testing.T) {
+	// The Configuration setters are public and must enforce the same rules
+	// as SetLogFile rather than relying on callers.
+	resetConfigOnCleanup(t)
+	config := GetConfiguration()
+	config.Reset()
+
+	if err := config.SetDefaultFile(" spaced.log"); err == nil {
+		t.Error("Expected SetDefaultFile to reject leading whitespace")
+	}
+	if err := config.SetDefaultFile("nul\x00.log"); err == nil {
+		t.Error("Expected SetDefaultFile to reject null bytes")
+	}
+	if config.GetDefaultFile() != "" {
+		t.Errorf("Rejected path must not be stored, got %q", config.GetDefaultFile())
+	}
+
+	if err := config.SetDefaultFormat(FileFormat(99)); err == nil {
+		t.Error("Expected SetDefaultFormat to reject an undefined format")
+	}
+	if err := config.SetDefaultFormat(FileFormat(-1)); err == nil {
+		t.Error("Expected SetDefaultFormat to reject a negative format")
+	}
+	if config.GetDefaultFormat() != FormatTXT {
+		t.Errorf("Rejected format must not be stored, got %d", config.GetDefaultFormat())
+	}
+	if err := config.SetDefaultFormat(FormatJSON); err != nil {
+		t.Errorf("Expected FormatJSON to be accepted, got: %v", err)
+	}
+	if config.GetDefaultFormat() != FormatJSON {
+		t.Errorf("Expected FormatJSON to be stored, got %d", config.GetDefaultFormat())
 	}
 }
 
@@ -210,13 +262,14 @@ func TestInvalidFormatHandling(t *testing.T) {
 		t.Fatalf("Failed to init logger: %v", err)
 	}
 
-	// SetDefaultFormat performs no validation, so an out-of-range value
-	// reaches the writer.
+	// Bypass validation to exercise the writer's defensive default branch.
 	config := GetConfiguration()
 	if err := config.SetDefaultFile(path); err != nil {
 		t.Fatalf("Failed to set file: %v", err)
 	}
-	config.SetDefaultFormat(FileFormat(99))
+	config.mu.Lock()
+	config.defaultFormat = FileFormat(99)
+	config.mu.Unlock()
 
 	logger.Info("Testing invalid format handling")
 	logger.Info("second attempt")
