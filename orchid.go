@@ -69,6 +69,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // ANSI color codes for different log levels
@@ -119,8 +120,8 @@ func (l *Logger) Init(moduleName string) error {
 	if trimmed == "" {
 		return fmt.Errorf("module name cannot be empty or whitespace-only")
 	}
-	if len(trimmed) > 50 {
-		return fmt.Errorf("module name too long (max 50 characters): %d", len(trimmed))
+	if n := utf8.RuneCountInString(trimmed); n > 50 {
+		return fmt.Errorf("module name too long (max 50 characters): %d", n)
 	}
 
 	l.mu.Lock()
@@ -286,18 +287,16 @@ func Debug(a ...any) {
 // This affects both the default logger and all individual Logger instances.
 // All loggers will write to the same file using the specified format.
 // Pass an empty filePath to disable file logging.
-// Validation and file handling are performed by Configuration; on any error
-// the previous file and format remain in effect.
+// The file and the format are replaced together, so a log call that runs
+// concurrently with SetLogFile lands either entirely in the old file and
+// format or entirely in the new ones. Validation and file handling are
+// performed by Configuration; on any error the previous file and format
+// remain in effect.
 func SetLogFile(filePath string, format FileFormat) error {
-	if err := validateFormat(format); err != nil {
-		return err
-	}
-
-	config := GetConfiguration()
-	if err := config.SetDefaultFile(filePath); err != nil {
+	if err := GetConfiguration().setFile(filePath, &format); err != nil {
 		return fmt.Errorf("failed to set log file: %w", err)
 	}
-	return config.SetDefaultFormat(format)
+	return nil
 }
 
 // Close closes any open file handles in the global configuration.

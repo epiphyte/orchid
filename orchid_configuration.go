@@ -120,8 +120,21 @@ func (c *Configuration) setErrorOutput(w io.Writer) {
 // is closed, so if the path is invalid or the file cannot be opened the
 // previous configuration is left untouched and an error is returned.
 func (c *Configuration) SetDefaultFile(filePath string) error {
+	return c.setFile(filePath, nil)
+}
+
+// setFile replaces the log file and, when format is non-nil, the file format
+// in a single critical section, so no write can observe the new file with
+// the old format or vice versa. Validation and the open happen before the
+// lock is taken; on any error the current configuration is left untouched.
+func (c *Configuration) setFile(filePath string, format *FileFormat) error {
 	if err := validateFilePath(filePath); err != nil {
 		return err
+	}
+	if format != nil {
+		if err := validateFormat(*format); err != nil {
+			return err
+		}
 	}
 
 	var newFile *os.File
@@ -141,6 +154,9 @@ func (c *Configuration) SetDefaultFile(filePath string) error {
 	}
 	c.logFile = newFile
 	c.defaultFile = filePath
+	if format != nil {
+		c.defaultFormat = *format
+	}
 	c.fileErrorReported = false
 
 	return nil

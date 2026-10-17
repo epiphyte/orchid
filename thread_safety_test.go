@@ -1,6 +1,7 @@
 package orchid
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -106,8 +107,8 @@ func TestGlobalLoggerFileOperationRace(t *testing.T) {
 }
 
 func TestInstanceWriteDuringFileSwap(t *testing.T) {
-	// Instance loggers do not take the default-logger lock, so their file
-	// writes must be protected by the configuration lock alone.
+	// Each Logger has its own mutex, so nothing but the configuration lock
+	// protects an instance's file write from a concurrent file swap.
 	silenceLogOutput(t)
 	errs := captureFileErrors(t)
 	dir := t.TempDir()
@@ -286,4 +287,68 @@ func TestRapidInitAndLog(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+func TestSetLogFileSwapsFileAndFormatTogether(t *testing.T) {
+	// SetLogFile must replace the file and the format in one step: a write
+	// that lands in the JSON file must be JSON, and one that lands in the
+	// text file must be text, no matter how the swap interleaves with it.
+	silenceLogOutput(t)
+	dir := t.TempDir()
+	resetConfigOnCleanup(t)
+	txt := filepath.Join(dir, "swap.log")
+	js := filepath.Join(dir, "swap.json")
+
+	if err := SetLogFile(txt, FormatTXT); err != nil {
+		t.Fatalf("Failed to set log file: %v", err)
+	}
+
+	const numWriters = 8
+	const numSwaps = 200
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < numWriters; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			var logger Logger // independent loggers so only the configuration lock serializes them
+			if err := logger.Init("swap-format"); err != nil {
+				t.Errorf("Init failed: %v", err)
+				return
+			}
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					logger.Info("writer", id)
+				}
+			}
+		}(i)
+	}
+	for i := 0; i < numSwaps; i++ {
+		if err := SetLogFile(js, FormatJSON); err != nil {
+			t.Errorf("SetLogFile(json) failed: %v", err)
+		}
+		if err := SetLogFile(txt, FormatTXT); err != nil {
+			t.Errorf("SetLogFile(txt) failed: %v", err)
+		}
+	}
+	close(stop)
+	wg.Wait()
+
+	for _, line := range closeAndReadLines(t, txt) {
+		if strings.HasPrefix(line, "{") {
+			t.Fatalf("JSON line written to the text file: %q", line)
+		}
+	}
+	if err := SetLogFile(js, FormatJSON); err != nil {
+		t.Fatalf("Failed to reopen JSON file: %v", err)
+	}
+	for _, line := range closeAndReadLines(t, js) {
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("Non-JSON line written to the JSON file: %q", line)
+		}
+	}
 }

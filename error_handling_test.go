@@ -23,6 +23,8 @@ func TestLoggerInitValidation(t *testing.T) {
 		{"trailing whitespace", "test ", false, ""}, // Should trim and succeed
 		{"too long", strings.Repeat("a", 60), true, "too long"},
 		{"exactly 50 chars", strings.Repeat("a", 50), false, ""},
+		{"50 multibyte chars", strings.Repeat("é", 50), false, ""}, // limit is characters, not bytes
+		{"51 multibyte chars", strings.Repeat("é", 51), true, "too long"},
 	}
 
 	for _, tc := range testCases {

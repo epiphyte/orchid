@@ -6,6 +6,16 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `SetLogFile` replaced the file and the format in two separate steps, so a
+  log call running concurrently with the swap could write a plain-text line
+  into the JSON file or a JSON line into the text file. Both are now
+  replaced in one critical section.
+- `Logger.Init` counted the 50-character module name limit in bytes, so a
+  name with multibyte characters was rejected early. It now counts
+  characters, as documented.
+
 ## [1.0.1] - 2026-09-12
 
 ### Changed
