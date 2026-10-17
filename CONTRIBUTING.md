@@ -28,7 +28,8 @@ Install staticcheck with `go install honnef.co/go/tools/cmd/staticcheck@latest`.
    git tag v1.0.0
    git push origin v1.0.0
    ```
-4. Publish the new version
+4. Publish the new version by asking the module proxy to index the tag
    ```
-   GOPROXY=proxy.golang.org go list -m github.com/epiphyte/orchid@v1.0.0
+   make index                  # uses the most recent tag
+   make index VERSION=v1.0.0   # or a specific one
    ```

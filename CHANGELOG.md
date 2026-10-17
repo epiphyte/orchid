@@ -6,6 +6,21 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-10-17
+
+### Added
+
+- `make index` asks the Go module proxy to fetch the most recent tag
+  (override with `VERSION=vX.Y.Z`), replacing the hand-typed command in the
+  release process.
+
+### Changed
+
+- The 1.0.2 fixes are now recorded under their own version below; the tagged
+  release still listed them as unreleased.
+
+## [1.0.2] - 2026-10-17
+
 ### Fixed
 
 - `SetLogFile` replaced the file and the format in two separate steps, so a
@@ -105,7 +120,9 @@ a new major version.
 - JSON file output, example program, per-module `Logger` instances,
   and the initial colorized console logger.
 
-[Unreleased]: https://github.com/epiphyte/orchid/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/epiphyte/orchid/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/epiphyte/orchid/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/epiphyte/orchid/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/epiphyte/orchid/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/epiphyte/orchid/compare/v0.4.1...v1.0.0
 [0.4.1]: https://github.com/epiphyte/orchid/compare/v0.4.0...v0.4.1
